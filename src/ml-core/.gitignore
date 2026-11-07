@@ -1,0 +1,29 @@
+# Virtual environments and IDE
+/.venv*/
+/.idea/
+/.vscode/
+__pycache__/
+*.py[cod]
+
+# Never commit secrets or user audio
+.env
+.env.*
+!.env.example
+/data/
+/recordings/
+/results/
+
+# Models: download via setup.ps1, never commit their weights/manifest
+/models/**/*.onnx
+/models/gigaam-v3-e2e-rnnt/
+/models/**/*.partial
+
+# Output from personal recordings
+/output/*
+!/output/.gitkeep
+
+# Generated setup state
+/installed_versions.txt
+*.log
+*.tmp
+.pytest_cache/

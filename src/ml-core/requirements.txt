@@ -1,0 +1,8 @@
+# The exact top-level library versions observed in the working A5/A6 Windows Python 3.13 environment.
+# Model weights are not bundled. Dependencies resolve transitively.
+numpy==2.5.4
+scipy==1.18.1
+soundfile==0.14.0
+onnxruntime==1.31.1
+kaldi-native-fbank==1.23.0
+onnx-asr[cpu,hub]==0.12.0

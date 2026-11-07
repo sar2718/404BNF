@@ -1,0 +1,29 @@
+# Frozen from the successful Windows Python 3.13 installation of 404BNF.
+# This is a version-pinned requirements file, not a pip --require-hashes lock.
+# Use only on Windows / Python 3.13 (CPU); keep requirements.txt for development.
+anyio==4.16.0
+cffi==2.1.1
+click==8.5.0
+colorama==0.4.6
+filelock==4.2.9
+flatbuffers==25.12.19
+fsspec==2026.9.0
+h11==0.16.0
+hf-xet==1.8.0
+httpcore2==2.16.0
+httpx2==2.16.0
+huggingface-hub==2.4.0
+idna==3.20
+kaldi-native-fbank==1.23.0
+numpy==2.5.4
+onnx-asr[cpu,hub]==0.12.0
+onnxruntime==1.31.1
+packaging==26.3
+protobuf==7.36.2
+pycparser==3.12
+PyYAML==6.0.3
+scipy==1.18.1
+soundfile==0.14.0
+tqdm==4.70.1
+truststore==0.10.5
+typing-extensions==4.16.0

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "404BNF Transcript v1",
+  "type": "object",
+  "required": ["schema_version", "id", "result_id", "audio_sha256", "duration", "asr_model", "diarization", "segments", "words"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "result_id": {"type": "string", "format": "uuid"},
+    "audio_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "audio": {"type": "string"},
+    "duration": {"type": "number", "minimum": 0},
+    "asr_model": {"type": "string"},
+    "diarization": {"type": "string"},
+    "pipeline_version": {"type": ["string", "number"]},
+    "text": {"type": "string"},
+    "speaker_labels": {"type": "object", "additionalProperties": {"type": "string"}},
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "start", "end", "speaker_id", "text", "overlap", "speaker_ambiguous"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "start": {"type": "number", "minimum": 0},
+          "end": {"type": "number", "minimum": 0},
+          "speaker_id": {"type": "string"},
+          "text": {"type": "string"},
+          "overlap": {"type": "boolean"},
+          "speaker_ambiguous": {"type": "boolean"},
+          "speaker_label": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "words": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text", "start", "end", "speaker_id", "overlap", "speaker_ambiguous"],
+        "properties": {
+          "text": {"type": "string"},
+          "start": {"type": "number", "minimum": 0},
+          "end": {"type": "number", "minimum": 0},
+          "speaker_id": {"type": "string"},
+          "overlap": {"type": "boolean"},
+          "speaker_ambiguous": {"type": "boolean"},
+          "timing_source": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

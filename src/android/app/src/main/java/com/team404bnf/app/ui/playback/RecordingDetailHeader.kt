@@ -3,6 +3,7 @@ package com.team404bnf.app.ui.playback
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -10,9 +11,30 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 import com.team404bnf.app.R
 
+private enum class ExportCategory(
+    val title: String,
+    val description: String,
+) {
+    TEXT("Текст", "Экспорт расшифровки"),
+    AUDIO("Аудио", "Экспорт звукозаписи")
+}
+
+private enum class ExportFormat(
+    val category: ExportCategory,
+    val title: String,
+    val description: String
+) {
+    TXT(ExportCategory.TEXT, "TXT", "Текстовый файл"),
+    JSON(ExportCategory.TEXT, "JSON", "Структурированная расшифровка"),
+    WAV(ExportCategory.AUDIO, "WAV", "Аудиозапись"),
+    MP3(ExportCategory.AUDIO, "MP3", "Сжатый аудиофайл")
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordingDetailHeader(
     title: String,
@@ -21,14 +43,18 @@ fun RecordingDetailHeader(
     hasDeletedSegments: Boolean,
     hasUserEdits: Boolean,
     canExportTranscript: Boolean,
+    canExportJson: Boolean,
     onBack: () -> Unit,
     onRename: (String) -> Unit,
     onShowInfo: () -> Unit,
     onRestoreDeleted: () -> Unit,
     onResetEdits: () -> Unit,
     onExportTranscript: () -> Unit,
+    onExportJson: () -> Unit,
     onExportWav: () -> Unit,
+    onExportMp3: () -> Unit,
     wavExportInProgress: Boolean,
+    mp3ExportInProgress: Boolean = false
 ) {
     var menuExpanded by remember {
         mutableStateOf(false)
@@ -40,6 +66,64 @@ fun RecordingDetailHeader(
 
     var draftTitle by remember {
         mutableStateOf("")
+    }
+
+    var exportSheetOpen by remember {
+        mutableStateOf(false)
+    }
+
+    var selectedExportCategory by remember {
+        mutableStateOf<ExportCategory?>(null)
+    }
+
+    var exportSelectionInProgress by remember {
+        mutableStateOf(false)
+    }
+
+    val exportSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
+    val exportScope = rememberCoroutineScope()
+
+    val availableExportFormats = remember(
+        canExportTranscript,
+        canExportJson,
+        wavExportInProgress,
+        mp3ExportInProgress
+    ) {
+        buildList {
+            if (canExportTranscript) add(ExportFormat.TXT)
+            if (canExportJson) add(ExportFormat.JSON)
+            if (!wavExportInProgress) add(ExportFormat.WAV)
+            if (!mp3ExportInProgress) add(ExportFormat.MP3)
+        }
+    }
+
+    fun openExportSheet() {
+        selectedExportCategory = null
+        exportSheetOpen = true
+    }
+
+    fun selectExportFormat(format: ExportFormat) {
+        if (exportSelectionInProgress) return
+
+        exportSelectionInProgress = true
+        exportScope.launch {
+            try {
+                exportSheetState.hide()
+                exportSheetOpen = false
+                selectedExportCategory = null
+
+                when (format) {
+                    ExportFormat.TXT -> onExportTranscript()
+                    ExportFormat.JSON -> onExportJson()
+                    ExportFormat.WAV -> onExportWav()
+                    ExportFormat.MP3 -> onExportMp3()
+                }
+            } finally {
+                exportSelectionInProgress = false
+            }
+        }
     }
 
     Row(
@@ -132,27 +216,13 @@ fun RecordingDetailHeader(
                     )
                 }
 
-                if (canExportTranscript) {
-
-                    DropdownMenuItem(
-                        text = {
-                            Text("Экспорт расшифровки")
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onExportTranscript()
-                        }
-                    )
-                }
-
                 DropdownMenuItem(
                     text = {
-                        Text("Экспорт аудио (.wav)")
+                        Text("Экспортировать")
                     },
-                    enabled = !wavExportInProgress,
                     onClick = {
                         menuExpanded = false
-                        onExportWav()
+                        openExportSheet()
                     }
                 )
 
@@ -168,6 +238,116 @@ fun RecordingDetailHeader(
                         onShowInfo()
                     }
                 )
+            }
+        }
+    }
+
+    if (exportSheetOpen) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                exportSheetOpen = false
+                selectedExportCategory = null
+            },
+            sheetState = exportSheetState
+        ) {
+            val category = selectedExportCategory
+            val formats = availableExportFormats.filter {
+                it.category == category
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+            ) {
+                if (category == null) {
+                    Text(
+                        text = "Экспортировать",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(
+                            start = 24.dp,
+                            end = 24.dp,
+                            bottom = 8.dp
+                        )
+                    )
+
+                    ExportCategory.entries.forEach { exportCategory ->
+                        val categoryAvailable = availableExportFormats.any {
+                            it.category == exportCategory
+                        }
+
+                        ListItem(
+                            headlineContent = {
+                                Text(exportCategory.title)
+                            },
+                            supportingContent = {
+                                Text(
+                                    if (categoryAvailable) {
+                                        exportCategory.description
+                                    } else {
+                                        "Недоступно для этой записи"
+                                    }
+                                )
+                            },
+                            modifier = if (categoryAvailable) {
+                                Modifier.clickable {
+                                    selectedExportCategory = exportCategory
+                                }
+                            } else {
+                                Modifier
+                            }
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = 16.dp,
+                                end = 24.dp,
+                                bottom = 8.dp
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = {
+                                selectedExportCategory = null
+                            }
+                        ) {
+                            Text("‹")
+                        }
+                        Text(
+                            text = category.title,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
+
+                    if (formats.isEmpty()) {
+                        Text(
+                            text = "Нет доступных форматов",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(
+                                start = 24.dp,
+                                end = 24.dp,
+                                bottom = 16.dp
+                            )
+                        )
+                    } else {
+                        formats.forEach { format ->
+                            ListItem(
+                                headlineContent = {
+                                    Text(format.title)
+                                },
+                                supportingContent = {
+                                    Text(format.description)
+                                },
+                                modifier = Modifier.clickable {
+                                    selectExportFormat(format)
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }

@@ -61,8 +61,20 @@ data class TxtExportState(
     val error: String? = null
 )
 
+data class JsonExportState(
+    val inProgress: Boolean = false,
+    val success: Boolean = false,
+    val error: String? = null
+)
+
 data class WavExportState(
     val inProgress: Boolean = false,
+    val error: String? = null
+)
+
+data class Mp3ExportState(
+    val inProgress: Boolean = false,
+    val success: Boolean = false,
     val error: String? = null
 )
 
@@ -115,11 +127,20 @@ class PlaybackViewModel(
     private val _txtExportState = MutableStateFlow(TxtExportState())
     val txtExportState = _txtExportState.asStateFlow()
 
+    private val _jsonExportState = MutableStateFlow(JsonExportState())
+    val jsonExportState = _jsonExportState.asStateFlow()
+
     private val _wavExportState = MutableStateFlow(
         WavExportState()
     )
 
     val wavExportState = _wavExportState.asStateFlow()
+
+    private val _mp3ExportState = MutableStateFlow(
+        Mp3ExportState()
+    )
+
+    val mp3ExportState = _mp3ExportState.asStateFlow()
 
     private val _recordingDetailsState = MutableStateFlow(
         RecordingDetailsUiState()
@@ -539,6 +560,151 @@ class PlaybackViewModel(
         _wavExportState.update {
             it.copy(error = null)
         }
+    }
+
+    fun exportMp3(
+        uri: Uri,
+        resolver: ContentResolver
+    ) {
+        if (_mp3ExportState.value.inProgress) return
+
+        _mp3ExportState.value = Mp3ExportState(
+            inProgress = true
+        )
+
+        viewModelScope.launch {
+            try {
+                val playable = withContext(Dispatchers.IO) {
+                    repository.getPlayableRecording(recordingId)
+                } ?: throw IllegalStateException(
+                    "Аудиозапись недоступна"
+                )
+
+                Mp3FileExporter.export(
+                    source = playable.file,
+                    destination = uri,
+                    resolver = resolver
+                )
+
+                _mp3ExportState.value = Mp3ExportState(
+                    success = true
+                )
+
+            } catch (e: CancellationException) {
+                runCatching {
+                    android.provider.DocumentsContract.deleteDocument(resolver, uri)
+                }
+                throw e
+
+            } catch (e: Exception) {
+                runCatching {
+                    android.provider.DocumentsContract.deleteDocument(resolver, uri)
+                }
+                _mp3ExportState.value = Mp3ExportState(
+                    error = "Не удалось экспортировать аудиозапись"
+                )
+
+            } finally {
+                _mp3ExportState.update {
+                    it.copy(inProgress = false)
+                }
+            }
+        }
+    }
+
+    fun clearMp3ExportStatus() {
+        _mp3ExportState.value = Mp3ExportState()
+    }
+
+    fun clearMp3ExportError() {
+        _mp3ExportState.update {
+            it.copy(error = null)
+        }
+    }
+
+    fun prepareJsonExport(
+        onShowVersionSelection: () -> Unit,
+        onLaunchPicker: (com.team404bnf.app.transcription.ExportVersion) -> Unit
+    ) {
+        if (_jsonExportState.value.inProgress || _editing.value) return
+
+        _jsonExportState.value = JsonExportState(inProgress = true)
+
+        viewModelScope.launch {
+            try {
+                val options = withContext(Dispatchers.IO) {
+                    transcriptRepository.checkExportOptions(recordingId)
+                }
+
+                _jsonExportState.value = JsonExportState(inProgress = false)
+
+                if (options.showVersionSelection) {
+                    onShowVersionSelection()
+                } else if (options.correctedValid) {
+                    onLaunchPicker(com.team404bnf.app.transcription.ExportVersion.CORRECTED)
+                } else {
+                    onLaunchPicker(com.team404bnf.app.transcription.ExportVersion.ORIGINAL)
+                }
+
+            } catch (e: CancellationException) {
+                _jsonExportState.value = JsonExportState(inProgress = false)
+                throw e
+
+            } catch (e: Exception) {
+                _jsonExportState.value = JsonExportState(
+                    inProgress = false,
+                    error = e.message ?: "Не удалось проверить расшифровку для экспорта"
+                )
+            }
+        }
+    }
+
+    fun exportTranscriptJson(
+        uri: Uri,
+        version: com.team404bnf.app.transcription.ExportVersion,
+        resolver: ContentResolver
+    ) {
+        if (_jsonExportState.value.inProgress) return
+
+        _jsonExportState.value = JsonExportState(inProgress = true)
+
+        viewModelScope.launch {
+            try {
+                val jsonContent = withContext(Dispatchers.IO) {
+                    transcriptRepository.exportTranscriptJson(
+                        recordingId,
+                        version
+                    ) ?: throw IOException("Не удалось сформировать JSON расшифровки")
+                }
+
+                withContext(Dispatchers.IO) {
+                    val output = resolver.openOutputStream(uri, "wt")
+                        ?: throw IOException("Не удалось открыть файл для сохранения")
+
+                    OutputStreamWriter(
+                        output,
+                        Charsets.UTF_8
+                    ).buffered().use { writer ->
+                        writer.write(jsonContent)
+                    }
+                }
+
+                _jsonExportState.value = JsonExportState(success = true)
+
+            } catch (e: CancellationException) {
+                throw e
+
+            } catch (e: Exception) {
+
+                _jsonExportState.value = JsonExportState(
+                    error = e.message ?: "Не удалось сохранить JSON"
+                )
+            }
+        }
+    }
+
+    fun clearJsonExportStatus() {
+        _jsonExportState.value = JsonExportState()
     }
 
     private fun submitEdit(

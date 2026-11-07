@@ -60,4 +60,5 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.3.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     implementation("com.google.code.gson:gson:2.13.2")
+    implementation("de.sciss:jump3r:1.0.5")
 }

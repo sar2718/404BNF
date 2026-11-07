@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.team404bnf.app.playback.PlaybackViewModel
 import com.team404bnf.app.recording.RecordingSession
 import com.team404bnf.app.recording.RecordingStatus
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlaybackScreen(
@@ -60,6 +61,18 @@ fun PlaybackScreen(
 
     val wavExport by viewModel.wavExportState.collectAsState()
 
+    val mp3Export by viewModel.mp3ExportState.collectAsState()
+
+    val jsonExport by viewModel.jsonExportState.collectAsState()
+
+    var jsonVersionDialogOpen by remember {
+        mutableStateOf(false)
+    }
+
+    var selectedJsonExportVersion by remember {
+        mutableStateOf(com.team404bnf.app.transcription.ExportVersion.CORRECTED)
+    }
+
     val txtExportLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument(
@@ -87,6 +100,45 @@ fun PlaybackScreen(
                 resolver = context.contentResolver
             )
         }
+    }
+
+    val mp3ExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            "audio/mpeg"
+        )
+    ) { uri ->
+
+        if (uri != null) {
+            viewModel.exportMp3(
+                uri = uri,
+                resolver = context.contentResolver
+            )
+        }
+    }
+
+    val jsonExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            "application/json"
+        )
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportTranscriptJson(
+                uri = uri,
+                version = selectedJsonExportVersion,
+                resolver = context.contentResolver
+            )
+        }
+    }
+
+    fun launchJsonExportPicker(
+        version: com.team404bnf.app.transcription.ExportVersion
+    ) {
+        selectedJsonExportVersion = version
+        val fileName = suggestJsonFileName(
+            title = screen.title,
+            version = version
+        )
+        jsonExportLauncher.launch(fileName)
     }
 
     val showDebugImport = remember(context) {
@@ -159,8 +211,13 @@ fun PlaybackScreen(
         if (txtExport.success) {
             snackbarHostState.showSnackbar("Файл успешно сохранён")
             viewModel.clearTxtExportStatus()
-        } else if (txtExport.error != null) {
-            viewModel.clearTxtExportStatus()
+        }
+    }
+
+    LaunchedEffect(mp3Export) {
+        if (mp3Export.success) {
+            snackbarHostState.showSnackbar("Аудиофайл успешно сохранён")
+            viewModel.clearMp3ExportStatus()
         }
     }
 
@@ -195,6 +252,31 @@ fun PlaybackScreen(
                 TextButton(
                     onClick =
                         viewModel::clearWavExportError
+                ) {
+                    Text("Понятно")
+                }
+            }
+        )
+    }
+
+    mp3Export.error?.let { error ->
+
+        AlertDialog(
+            onDismissRequest =
+                viewModel::clearMp3ExportError,
+
+            title = {
+                Text("Ошибка экспорта аудио")
+            },
+
+            text = {
+                Text(error)
+            },
+
+            confirmButton = {
+                TextButton(
+                    onClick =
+                        viewModel::clearMp3ExportError
                 ) {
                     Text("Понятно")
                 }
@@ -237,6 +319,12 @@ fun PlaybackScreen(
                     transcriptDisplay.error == null &&
                     !transcriptDisplay.loading &&
                     transcriptDisplay.segments.isNotEmpty(),
+                canExportJson =
+                    jsonImport.hasTranscript &&
+                    !editing &&
+                    !jsonExport.inProgress &&
+                    transcriptDisplay.error == null &&
+                    !transcriptDisplay.loading,
                 onBack = onBack,
                 onRename = viewModel::renameChat,
                 onShowInfo = viewModel::showRecordingDetails,
@@ -272,7 +360,39 @@ fun PlaybackScreen(
 
                     wavExportLauncher.launch(fileName)
                 },
-                wavExportInProgress = wavExport.inProgress
+                onExportMp3 = {
+
+                    val safeTitle = screen.title
+                        .replace(
+                            Regex("[^\\p{L}\\p{N} _.-]"),
+                            "_"
+                        )
+                        .trim()
+                        .take(64)
+                        .ifBlank { "Аудиозапись" }
+
+                    val fileName = if (
+                        safeTitle.endsWith(".mp3", ignoreCase = true)
+                    ) {
+                        safeTitle
+                    } else {
+                        "$safeTitle.mp3"
+                    }
+
+                    mp3ExportLauncher.launch(fileName)
+                },
+                onExportJson = {
+                    viewModel.prepareJsonExport(
+                        onShowVersionSelection = {
+                            jsonVersionDialogOpen = true
+                        },
+                        onLaunchPicker = { version ->
+                            launchJsonExportPicker(version)
+                        }
+                    )
+                },
+                wavExportInProgress = wavExport.inProgress,
+                mp3ExportInProgress = mp3Export.inProgress
             )
 
             Spacer(Modifier.height(8.dp))
@@ -628,6 +748,104 @@ fun PlaybackScreen(
             }
         )
     }
+
+    LaunchedEffect(jsonExport) {
+        if (jsonExport.success) {
+            snackbarHostState.showSnackbar("JSON сохранён")
+            viewModel.clearJsonExportStatus()
+        }
+    }
+
+    jsonExport.error?.let { errorMsg ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearJsonExportStatus,
+            title = { Text("Ошибка экспорта") },
+            text = { Text(errorMsg) },
+            confirmButton = {
+                TextButton(onClick = viewModel::clearJsonExportStatus) {
+                    Text("Понятно")
+                }
+            }
+        )
+    }
+
+    if (jsonVersionDialogOpen) {
+        AlertDialog(
+            onDismissRequest = {
+                jsonVersionDialogOpen = false
+            },
+            title = {
+                Text("Выберите версию расшифровки")
+            },
+            text = {
+                Text(
+                    "Расшифровка содержит пользовательские исправления. " +
+                        "Какую версию вы хотите экспортировать?"
+                )
+            },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            jsonVersionDialogOpen = false
+                            launchJsonExportPicker(
+                                com.team404bnf.app.transcription.ExportVersion.CORRECTED
+                            )
+                        }
+                    ) {
+                        Text("С исправлениями")
+                    }
+
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            jsonVersionDialogOpen = false
+                            launchJsonExportPicker(
+                                com.team404bnf.app.transcription.ExportVersion.ORIGINAL
+                            )
+                        }
+                    ) {
+                        Text("Оригинальная расшифровка")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        jsonVersionDialogOpen = false
+                    }
+                ) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
+}
+
+internal fun suggestJsonFileName(
+    title: String,
+    version: com.team404bnf.app.transcription.ExportVersion
+): String {
+    val sanitized = title
+        .replace(
+            Regex("""[\\/:*?"<>|\p{Cntrl}]"""),
+            "_"
+        )
+        .trim()
+        .trim('.')
+        .take(64)
+        .ifBlank { "Расшифровка" }
+
+    val suffix = when (version) {
+        com.team404bnf.app.transcription.ExportVersion.ORIGINAL -> "_original"
+        com.team404bnf.app.transcription.ExportVersion.CORRECTED -> "_corrected"
+    }
+
+    return "${sanitized}${suffix}.json"
 }
 
 private fun suggestedTranscriptFileName(

@@ -667,6 +667,51 @@ class TranscriptRepository(
         return dao.observeExists(recordingId)
     }
 
+    suspend fun checkExportOptions(
+        recordingId: String
+    ): com.team404bnf.app.transcription.ExportOptions = withContext(Dispatchers.IO) {
+        val snapshot = dao.get(recordingId)
+            ?: throw IllegalStateException("Расшифровка не найдена")
+
+        val original = TranscriptJsonParser.parse(snapshot.rawJson)
+
+        com.team404bnf.app.transcription.TranscriptJsonExporter.checkExportOptions(
+            original = original,
+            userEditsJson = snapshot.userEditsJson
+        )
+    }
+
+    suspend fun validateAndCheckExportDifferences(
+        recordingId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val options = checkExportOptions(recordingId)
+        options.showVersionSelection
+    }
+
+    suspend fun exportTranscriptJson(
+        recordingId: String,
+        version: com.team404bnf.app.transcription.ExportVersion = com.team404bnf.app.transcription.ExportVersion.CORRECTED
+    ): String? = withContext(Dispatchers.IO) {
+        val snapshot = dao.get(recordingId) ?: return@withContext null
+        val original = TranscriptJsonParser.parse(snapshot.rawJson)
+        com.team404bnf.app.transcription.TranscriptJsonExporter.export(
+            original = original,
+            userEditsJson = snapshot.userEditsJson,
+            version = version
+        )
+    }
+
+    suspend fun hasExportableJsonDifferences(
+        recordingId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val snapshot = dao.get(recordingId) ?: return@withContext false
+        val original = TranscriptJsonParser.parse(snapshot.rawJson)
+        com.team404bnf.app.transcription.TranscriptJsonExporter.hasExportableDifferences(
+            original = original,
+            userEditsJson = snapshot.userEditsJson
+        )
+    }
+
     private fun validateOriginalGroup(
         segmentIds: List<String>,
         original: ParsedTranscript

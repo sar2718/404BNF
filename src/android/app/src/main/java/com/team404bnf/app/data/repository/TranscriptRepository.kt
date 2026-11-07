@@ -133,9 +133,15 @@ class TranscriptRepository(
                     TranscriptRecoveryState()
                 } else {
 
+                    val original = TranscriptJsonParser.parse(
+                        snapshot.rawJson
+                    )
+
                     val edits = JsonParser.parseString(
                         snapshot.userEditsJson
                     ).asJsonObject
+
+                    TranscriptUserEdits.clean(edits, original)
 
                     val hiddenIds = edits
                         .get("hiddenSegments")
@@ -158,26 +164,15 @@ class TranscriptRepository(
                         if (hiddenIds.isEmpty()) {
                             emptyList()
                         } else {
-                            TranscriptJsonParser.parse(
-                                snapshot.rawJson
-                            ).segments.filter {
+                            original.segments.filter {
                                 it.id in hiddenIds
                             }
                         }
 
-                    val hasEdits = edits.entrySet().any {
-                        (_, value) ->
-
-                        when {
-                            value.isJsonObject ->
-                                value.asJsonObject.size() > 0
-
-                            value.isJsonArray ->
-                                value.asJsonArray.size() > 0
-
-                            else -> true
-                        }
-                    }
+                    val hasEdits = TranscriptUserEdits.hasUserEdits(
+                        edits,
+                        original
+                    )
 
                     TranscriptRecoveryState(
                         deletedSegments = deletedSegments,
@@ -207,7 +202,11 @@ class TranscriptRepository(
                     snapshot.userEditsJson
                 ).asJsonObject
 
+                TranscriptUserEdits.clean(edits, original)
+
                 change(edits, original)
+
+                TranscriptUserEdits.clean(edits, original)
 
                 dao.updateUserEdits(
                     recordingId,

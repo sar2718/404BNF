@@ -17,8 +17,12 @@ import com.team404bnf.app.recording.RecordingSession
 import com.team404bnf.app.recording.RecordingStatus
 import com.team404bnf.app.transcription.JsonDocumentReader
 import com.team404bnf.app.transcription.TranscriptSegment
+import com.team404bnf.app.localml.LocalTranscriptionPipeline
+import com.team404bnf.ml.ModelManager
+import com.team404bnf.ml.ModelEvent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +35,14 @@ import android.content.ContentResolver
 import java.io.IOException
 import java.io.OutputStreamWriter
 import com.team404bnf.app.transcription.TranscriptTxtFormatter
+
+data class LocalMlState(
+    val running: Boolean = false,
+    val downloading: Boolean = false,
+    val stage: String? = null,
+    val error: String? = null,
+    val completed: Boolean = false
+)
 
 data class PlaybackScreenState(
     val title: String = "Аудиозапись",
@@ -154,6 +166,10 @@ class PlaybackViewModel(
     )
 
     val recoveryState = _recoveryState.asStateFlow()
+
+    private val _localMlState = MutableStateFlow(LocalMlState())
+    val localMlState = _localMlState.asStateFlow()
+    private var localMlJob: Job? = null
 
     private val controller = PlaybackController(context)
 
@@ -767,6 +783,72 @@ class PlaybackViewModel(
 
     fun clearEditError() {
         _editError.value = null
+    }
+
+    /** Explicit opt-in: models are never downloaded automatically. */
+    fun downloadLocalModels() {
+        if (localMlJob?.isActive == true || _jsonImportState.value.hasTranscript) return
+        _localMlState.value = LocalMlState(downloading = true, stage = "Подготовка загрузки моделей…")
+        localMlJob = viewModelScope.launch {
+            try {
+                ModelManager(appContext).ensureInstalled { event ->
+                    val stage = when (event) {
+                        is ModelEvent.Verified -> "Проверено: ${event.asset.fileName}"
+                        is ModelEvent.Installed -> "Скачано: ${event.asset.fileName}"
+                        is ModelEvent.Downloading -> "${event.asset.fileName}: " +
+                            "${event.downloaded / 1_048_576} МиБ"
+                    }
+                    _localMlState.update { it.copy(stage = stage) }
+                }
+                _localMlState.value = LocalMlState(stage = "Все модели установлены")
+            } catch (e: CancellationException) {
+                _localMlState.value = LocalMlState(stage = "Загрузка отменена")
+                throw e
+            } catch (e: Exception) {
+                _localMlState.value = LocalMlState(error = e.message ?: "Ошибка загрузки моделей")
+            } finally {
+                localMlJob = null
+            }
+        }
+    }
+
+    /** Turns a stored recording into JSON v1 and persists it through Edik's repository. */
+    fun transcribeLocally() {
+        if (localMlJob?.isActive == true || _jsonImportState.value.hasTranscript ||
+            _screenState.value.loading || _screenState.value.error != null) return
+        if (isMicrophoneBusy()) {
+            _localMlState.value = LocalMlState(error = "Дождитесь завершения записи")
+            return
+        }
+        _localMlState.value = LocalMlState(running = true, stage = "Подготавливаем запись…")
+        localMlJob = viewModelScope.launch {
+            try {
+                val audio = repository.getPlayableRecording(recordingId)
+                    ?: error("Аудиозапись недоступна")
+                val json = LocalTranscriptionPipeline(appContext).transcribe(audio.file) { stage ->
+                    _localMlState.update { it.copy(stage = stage) }
+                }
+                _localMlState.update { it.copy(stage = "Сохраняем расшифровку…") }
+                // save() rejects replacing a different existing transcript and checks duration.
+                transcriptRepository.save(recordingId, json)
+                _localMlState.value = LocalMlState(
+                    stage = "Расшифровка готова", completed = true
+                )
+            } catch (e: CancellationException) {
+                _localMlState.value = LocalMlState(stage = "Обработка отменена")
+                throw e
+            } catch (e: Exception) {
+                _localMlState.value = LocalMlState(error = e.message ?: "Ошибка локальной обработки")
+            } finally {
+                localMlJob = null
+            }
+        }
+    }
+
+    fun cancelLocalMl() {
+        if (localMlJob?.isActive != true) return
+        _localMlState.update { it.copy(stage = "Отменяем…") }
+        localMlJob?.cancel()
     }
 
     fun importJson(uri: Uri) {

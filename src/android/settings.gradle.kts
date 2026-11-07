@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "404BNF"
 include(":app")
+
+include(":ml")

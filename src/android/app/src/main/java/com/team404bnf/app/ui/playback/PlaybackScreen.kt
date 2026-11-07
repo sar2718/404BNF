@@ -33,6 +33,7 @@ fun PlaybackScreen(
     val recording by RecordingSession.state.collectAsState()
 
     val jsonImport by viewModel.jsonImportState.collectAsState()
+    val localMl by viewModel.localMlState.collectAsState()
     val transcriptDisplay by viewModel.transcriptDisplayState.collectAsState()
 
     val editing by viewModel.editing.collectAsState()
@@ -445,6 +446,45 @@ fun PlaybackScreen(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
+                    }
+
+                    if (!jsonImport.hasTranscript) {
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = viewModel::transcribeLocally,
+                            enabled = !localMl.running && !localMl.downloading &&
+                                !jsonImport.inProgress && !editing,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Расшифровать на устройстве")
+                        }
+                        TextButton(
+                            onClick = viewModel::downloadLocalModels,
+                            enabled = !localMl.running && !localMl.downloading,
+                        ) {
+                            Text("Скачать модели для офлайн-обработки (~925 МБ)")
+                        }
+                        if (localMl.running || localMl.downloading) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(localMl.stage ?: "Обработка…", style = MaterialTheme.typography.bodySmall)
+                            }
+                            OutlinedButton(onClick = viewModel::cancelLocalMl) {
+                                Text("Отменить")
+                            }
+                        } else {
+                            localMl.stage?.let { stage ->
+                                Text(stage, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        localMl.error?.let { error ->
+                            Text(error, color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall)
+                        }
                     }
 
                     if (showDebugImport && !jsonImport.hasTranscript) {

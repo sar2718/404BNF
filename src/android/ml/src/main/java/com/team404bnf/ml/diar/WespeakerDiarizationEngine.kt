@@ -43,17 +43,51 @@ class WespeakerDiarizationEngine(
         val windows = DiarizationTimeline.windows(intervals)
         onStage("M3: VAD intervals=${intervals.size}; CAM++ windows=${windows.size}")
         require(windows.size <= 500) { "Too many embedding windows for mobile debug" }
+        val jobContext = currentCoroutineContext()
         val embeds = if (windows.isEmpty()) emptyList() else sessions.withSession(campp) { session ->
             require(session.inputNames.contains("feats")) { "CAM++ input 'feats' missing" }
+            onStage("M3: FBank Feature Extraction")
+            val globalFeats = fbank.extract(mono16k, applyCmn = false)
+
+            // Compute global mean over all speech intervals (CMN)
+            val speechFrames = BooleanArray(globalFeats.frames)
+            for (interval in intervals) {
+                val startFrame = (interval.start * 100).toInt().coerceIn(0, globalFeats.frames)
+                val endFrame = (interval.end * 100).toInt().coerceIn(startFrame, globalFeats.frames)
+                for (i in startFrame until endFrame) speechFrames[i] = true
+            }
+            val totalSpeechFrames = speechFrames.count { it }
+            if (totalSpeechFrames > 0) {
+                for (band in 0 until 80) {
+                    var sum = 0.0
+                    for (frame in 0 until globalFeats.frames) {
+                        if (speechFrames[frame]) {
+                            sum += globalFeats.values[frame * 80 + band]
+                        }
+                    }
+                    val mean = (sum / totalSpeechFrames).toFloat()
+                    for (frame in 0 until globalFeats.frames) {
+                        globalFeats.values[frame * 80 + band] -= mean
+                    }
+                }
+            }
+
             windows.mapIndexed { index, window ->
-                val from = max(0, (window.start * 16_000).toInt())
-                val to = minOf(mono16k.size, (window.end * 16_000).toInt())
-                val samples = mono16k.copyOfRange(from, to)
+                jobContext.ensureActive()
                 if (index == 0 || (index + 1) % 5 == 0 || index == windows.lastIndex)
                     onStage("M3: WeSpeaker CAM++ ${index + 1}/${windows.size}")
-                val feats = fbank.extract(samples)
+
+                val startFrame = (window.start * 100).toInt().coerceIn(0, globalFeats.frames)
+                val endFrame = (window.end * 100).toInt().coerceIn(startFrame, globalFeats.frames)
+                val frames = endFrame - startFrame
+
+                require(frames > 0) { "Empty embedding window" }
+
+                val slice = FloatArray(frames * 80)
+                System.arraycopy(globalFeats.values, startFrame * 80, slice, 0, slice.size)
+
                 OnnxTensor.createTensor(
-                    env, FloatBuffer.wrap(feats.values), longArrayOf(1, feats.frames.toLong(), 80),
+                    env, FloatBuffer.wrap(slice), longArrayOf(1, frames.toLong(), 80),
                 ).use { input ->
                     session.run(mapOf("feats" to input)).use { out ->
                         val buffer = (out[0] as OnnxTensor).floatBuffer

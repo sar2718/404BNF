@@ -47,7 +47,7 @@ class KaldiFbank80 {
     }
 
     /** Return [1,frames,80] memory order as flat FloatArray. */
-    fun extract(samples: FloatArray): Features {
+    fun extract(samples: FloatArray, applyCmn: Boolean = true): Features {
         require(samples.size >= 7200) { "CAM++ requires at least 0.45 seconds of speech" }
         require(samples.all(Float::isFinite))
         val frames = 1 + (samples.size - FRAME_SIZE) / FRAME_SHIFT
@@ -76,11 +76,13 @@ class KaldiFbank80 {
             }
         }
         // Kaldi mean-only CMN across all frames of the current embedding window.
-        for (band in 0 until MEL_BINS) {
-            var total = 0.0
-            for (frame in 0 until frames) total += values[frame * MEL_BINS + band]
-            val mean = (total / frames).toFloat()
-            for (frame in 0 until frames) values[frame * MEL_BINS + band] -= mean
+        if (applyCmn) {
+            for (band in 0 until MEL_BINS) {
+                var total = 0.0
+                for (frame in 0 until frames) total += values[frame * MEL_BINS + band]
+                val mean = (total / frames).toFloat()
+                for (frame in 0 until frames) values[frame * MEL_BINS + band] -= mean
+            }
         }
         return Features(values, frames)
     }

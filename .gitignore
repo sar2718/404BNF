@@ -1,1 +1,26 @@
- 
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.iml
+
+# Local settings and caches
+.gradle/
+local.properties
+/build/
+*.log
+
+# Python virtual environment
+.venv*/
+__pycache__/
+
+# Secrets and credentials
+*.jks
+*.keystore
+google-services.json
+.env
+.env.*
+!.env.example

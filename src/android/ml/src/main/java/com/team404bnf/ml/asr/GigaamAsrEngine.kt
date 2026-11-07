@@ -12,17 +12,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.RandomAccessFile
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
 /**
- * GigaAM v3 E2E RNNT FP32 mobile inference, following onnx-asr 0.12.0's
- * _AsrWithTransducerDecoding and GigaamV2Rnnt behavior.
- *
- * Input: Float32 mono PCM at exactly 16000 Hz. No network, no Python, no INT8.
- * Output: ASR words with approximate timestamps (not forced alignment).
- *
- * CPU-only first port; requires device-level performance and accuracy testing.
+ * GigaAM v3 E2E RNNT FP32 mobile inference.
+ * Completely redesigned for arbitrary long file streaming via PCM.
  */
 class GigaamAsrEngine(
     private val modelManager: ModelManager,
@@ -41,61 +41,94 @@ class GigaamAsrEngine(
         .single { it.fileName == name }
 
     suspend fun recognize(
-        mono16k: FloatArray,
+        pcmFile: File, totalSamples: Long,
         onStage: (String) -> Unit = {},
     ): AsrOutput = withContext(Dispatchers.Default) {
-        require(mono16k.isNotEmpty()) { "Empty audio" }
-        require(mono16k.size <= 16_000 * 300) { "M2 debug max duration is 5 minutes" }
-        require(mono16k.all { it.isFinite() && it in -1.0001f..1.0001f }) { "Invalid Float32 audio" }
+        require(totalSamples > 0) { "Empty audio" }
         val vocab = RnntText.Vocab(modelManager.checkedFile(vocabAsset))
-        val chunks = QuietPointChunker.split(mono16k)
+        val chunks = QuietPointChunker.split(pcmFile, totalSamples)
 
         class EncodedChunk(
-            val offsetSamples: Int,
+            val offsetSamples: Long,
             val durationSamples: Int,
-            val encoded: Encoded
+            val channels: Int,
+            val time: Int,
+            val validTime: Int,
+            val fileOffset: Long
         )
         val encodedChunks = mutableListOf<EncodedChunk>()
         val jobContext = currentCoroutineContext()
 
-        sessions.withSession(encoder) { session ->
-            chunks.forEachIndexed { index, chunk ->
-                jobContext.ensureActive()
-                // Python A5 feeds PCM16 WAV chunks to onnx-asr (quantizes source samples).
-                val quantized = FloatArray(chunk.data.size) { i ->
-                    (chunk.data[i] * 32768f).toInt().coerceIn(-32768, 32767) / 32768f
-                }
-                if (quantized.size >= GigaamFeatureExtractor.FRAME_SIZE) {
-                    onStage("Chunk ${index + 1}/${chunks.size}: feature extraction")
-                    val inputFeatures = features.extract(quantized)
-                    onStage("Chunk ${index + 1}/${chunks.size}: GigaAM encoder")
-                    val encoded = encode(session, inputFeatures)
-                    encodedChunks.add(EncodedChunk(chunk.offsetSamples, chunk.data.size, encoded))
-                }
-            }
-        }
+        val encoderOutFile = File.createTempFile("gigaam_enc", ".bin", pcmFile.parentFile)
+        try {
+            val encChannel = FileOutputStream(encoderOutFile).channel
+            try {
+                sessions.withSession(encoder) { session ->
+                    val audioBytes = ByteArray(22 * 16000 * 4) // max chunk size bytes
+                    val audioFloats = FloatArray(22 * 16000)
+                    RandomAccessFile(pcmFile, "r").use { raf ->
+                        chunks.forEachIndexed { index, chunk ->
+                            jobContext.ensureActive()
+                            raf.seek(chunk.offsetSamples * 4L)
+                            raf.readFully(audioBytes, 0, chunk.durationSamples * 4)
+                            ByteBuffer.wrap(audioBytes, 0, chunk.durationSamples * 4).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(audioFloats, 0, chunk.durationSamples)
 
-        val words = mutableListOf<AsrWord>()
-        val texts = mutableListOf<String>()
+                            val quantized = FloatArray(chunk.durationSamples) { i ->
+                                (audioFloats[i] * 32768f).toInt().coerceIn(-32768, 32767) / 32768f
+                            }
+                            if (quantized.size >= GigaamFeatureExtractor.FRAME_SIZE) {
+                                onStage("Chunk ${index + 1}/${chunks.size}: feature extraction")
+                                val inputFeatures = features.extract(quantized)
+                                onStage("Chunk ${index + 1}/${chunks.size}: GigaAM encoder")
+                                val encoded = encode(session, inputFeatures)
 
-        if (encodedChunks.isNotEmpty()) {
-            sessions.withSessions(listOf(decoder, joint)) { opened ->
-                encodedChunks.forEachIndexed { index, item ->
-                    jobContext.ensureActive()
-                    onStage("Chunk ${index + 1}/${encodedChunks.size}: RNNT decoder")
-                    val ids = decodeRnnt(opened[0], opened[1], item.encoded, vocab.blankId) {
-                        jobContext.ensureActive()
+                                val fileOffset = encChannel.position()
+                                val buf = ByteBuffer.allocateDirect(encoded.values.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+                                buf.asFloatBuffer().put(encoded.values)
+                                while(buf.hasRemaining()) encChannel.write(buf)
+
+                                encodedChunks.add(EncodedChunk(chunk.offsetSamples, chunk.durationSamples, encoded.channels, encoded.time, encoded.validTime, fileOffset))
+                            }
+                        }
                     }
-                    val partial = RnntText.decode(
-                        ids, vocab.tokens, item.offsetSamples / 16_000.0, item.durationSamples / 16_000.0,
-                    )
-                    texts.add(partial.text.trim())
-                    words.addAll(partial.words)
+                }
+            } finally {
+                encChannel.close()
+            }
+
+            val words = mutableListOf<AsrWord>()
+            val texts = mutableListOf<String>()
+
+            if (encodedChunks.isNotEmpty()) {
+                RandomAccessFile(encoderOutFile, "r").channel.use { decChannel ->
+                    sessions.withSessions(listOf(decoder, joint)) { opened ->
+                        encodedChunks.forEachIndexed { index, item ->
+                            jobContext.ensureActive()
+                            onStage("Chunk ${index + 1}/${encodedChunks.size}: RNNT decoder")
+
+                            val buf = ByteBuffer.allocateDirect(item.channels * item.time * 4).order(ByteOrder.LITTLE_ENDIAN)
+                            decChannel.read(buf, item.fileOffset)
+                            buf.flip()
+                            val values = FloatArray(item.channels * item.time)
+                            buf.asFloatBuffer().get(values)
+                            val encoded = Encoded(values, item.channels, item.time, item.validTime)
+
+                            val ids = decodeRnnt(opened[0], opened[1], encoded, vocab.blankId) {
+                                jobContext.ensureActive()
+                            }
+                            val partial = RnntText.decode(
+                                ids, vocab.tokens, item.offsetSamples / 16_000.0, item.durationSamples / 16_000.0,
+                            )
+                            texts.add(partial.text.trim())
+                            words.addAll(partial.words)
+                        }
+                    }
                 }
             }
+            AsrOutput(texts.filter { it.isNotEmpty() }.joinToString(" "), words)
+        } finally {
+            encoderOutFile.delete()
         }
-
-        AsrOutput(texts.filter { it.isNotEmpty() }.joinToString(" "), words)
     }
 
     private data class Encoded(val values: FloatArray, val channels: Int, val time: Int, val validTime: Int)
@@ -137,7 +170,6 @@ class GigaamAsrEngine(
         val encFrame = FloatArray(encoded.channels)
         while (frame < encoded.validTime) {
             cancelCheck()
-            // encoded is [1, channels, T]; onnx-asr transposes to [1, T, channels].
             for (channel in 0 until encoded.channels) {
                 encFrame[channel] = encoded.values[channel * encoded.time + frame]
             }
@@ -159,8 +191,8 @@ class GigaamAsrEngine(
                 decCache = null
                 emitted.add(RnntText.Emission(bestId, frame * 0.04))
                 perFrame++
-                check(emitted.size <= 20_000) { "RNNT safety token limit reached" }
-            } // On blank, onnx-asr reuses the decoder output + *pending* h,c state.
+                check(emitted.size <= 50_000) { "RNNT safety token limit reached" }
+            }
             if (bestId == blankId || perFrame >= 3) {
                 frame++
                 perFrame = 0
@@ -191,7 +223,6 @@ class GigaamAsrEngine(
     }
 
     private fun runJoint(session: OrtSession, encoderFrame: FloatArray, decoderState: FloatArray): FloatArray {
-        // Decoder returns [1,1,320]; joint wants [1,320,1] (same memory order for singleton dimensions).
         OnnxTensor.createTensor(env, FloatBuffer.wrap(encoderFrame), longArrayOf(1, encoderFrame.size.toLong(), 1)).use { enc ->
             OnnxTensor.createTensor(env, FloatBuffer.wrap(decoderState), longArrayOf(1, 320, 1)).use { dec ->
                 session.run(mapOf("enc" to enc, "dec" to dec)).use { result ->

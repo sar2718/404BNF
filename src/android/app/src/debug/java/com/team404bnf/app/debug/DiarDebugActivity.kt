@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
+import com.team404bnf.app.localml.AudioToMono16k
 import com.team404bnf.ml.ModelManager
 import com.team404bnf.ml.OnnxSessionManager
 import com.team404bnf.ml.asr.GigaamAsrEngine
@@ -35,23 +36,29 @@ class DiarDebugActivity : ComponentActivity() {
         fullButton.isEnabled = false
         output.text = ""
         lifecycleScope.launch {
+            val sourceFile = java.io.File.createTempFile("debug_src", ".audio", cacheDir)
+            val pcmFile = java.io.File.createTempFile("debug_pcm", ".pcm", cacheDir)
             try {
-                val audio = withContext(Dispatchers.IO) {
-                    contentResolver.openInputStream(uri)?.use { Pcm16WavReader.read(it, 120) }
-                        ?: error("Cannot read WAV")
+                val totalSamples = withContext(Dispatchers.IO) {
+                    contentResolver.openInputStream(uri)?.use { input: java.io.InputStream ->
+                        java.io.FileOutputStream(sourceFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    AudioToMono16k.decode(sourceFile, pcmFile)
                 }
-                log("WAV: %.2f seconds (mono PCM16 16 kHz)".format(Locale.ROOT, audio.size / 16000.0))
+                log("WAV: %.2f seconds (mono PCM16 16 kHz)".format(Locale.ROOT, totalSamples / 16000.0))
                 val manager = ModelManager(applicationContext)
                 val sessions = OnnxSessionManager(manager)
                 // M2 runs independently and completes before M3 uses any sessions.
                 val asr = if (full) {
                     log("Running M2 GigaAM FP32 ASR first...")
-                    GigaamAsrEngine(manager, sessions).recognize(audio) { log(it) }.also {
+                    GigaamAsrEngine(manager, sessions).recognize(pcmFile, totalSamples) { log(it) }.also {
                         log("M2: words=${it.words.size}; TEXT=${it.text}")
                     }
                 } else null
                 log("Running M3 Silero + WeSpeaker...")
-                val result = WespeakerDiarizationEngine(sessions).diarize(audio) { log(it) }
+                val result = WespeakerDiarizationEngine(sessions).diarize(pcmFile, totalSamples) { log(it) }
                 log("M3 DONE: speakers=${result.speakersDetected}; VAD=${result.speechIntervals}; " +
                     "embeddings=${result.embeddingWindows}; intervals=${result.turns.size}; " +
                     "elapsed=%.1fs".format(Locale.ROOT, result.elapsedSeconds))
@@ -73,6 +80,8 @@ class DiarDebugActivity : ComponentActivity() {
             } catch (t: Throwable) {
                 log("ERROR: ${t.javaClass.simpleName}: ${t.message}")
             } finally {
+                sourceFile.delete()
+                pcmFile.delete()
                 diarButton.isEnabled = true
                 fullButton.isEnabled = true
             }

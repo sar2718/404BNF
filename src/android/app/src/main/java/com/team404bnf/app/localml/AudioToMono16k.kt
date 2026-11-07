@@ -10,27 +10,29 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.roundToInt
+import java.nio.channels.FileChannel
+import java.io.FileOutputStream
 
-/** Converts local recordings/imported files into the exact mono 16 kHz float PCM used by M2/M3.
- * Does not upload audio or retain an additional decoded copy on disk.
+/** Converts local recordings/imported files into mono 16 kHz float PCM.
+ * Writes output continuously to a temporary PCM file to support unlimited duration.
  */
 internal object AudioToMono16k {
     private const val TARGET_RATE = 16_000
-    private const val MAX_SECONDS = 300
-    private const val MAX_SAMPLES = TARGET_RATE * MAX_SECONDS
 
-    suspend fun decode(file: File): FloatArray = withContext(Dispatchers.IO) {
+    suspend fun decode(file: File, pcmOut: File): Long = withContext(Dispatchers.IO) {
         require(file.isFile && file.canRead()) { "Аудиофайл отсутствует" }
-        require(file.length() > 0L && file.length() <= 1024L * 1024L * 1024L) {
-            "Недопустимый размер аудиофайла"
+        require(file.length() > 0L) { "Недопустимый размер аудиофайла" }
+
+        var samples = decodeWav(file, pcmOut)
+        if (samples == null) {
+            samples = decodeWithMediaCodec(file, pcmOut)
         }
-        // Our microphone recordings are WAV; this branch also accepts WAV 44.1/48 kHz and stereo.
-        decodeWav(file) ?: decodeWithMediaCodec(file)
+        samples
     }
 
-    private suspend fun decodeWav(file: File): FloatArray? {
+    private suspend fun decodeWav(file: File, pcmOut: File): Long? {
         RandomAccessFile(file, "r").use { raf ->
             if (raf.length() < 44L) return null
             val head = ByteArray(12)
@@ -75,54 +77,64 @@ internal object AudioToMono16k {
                 "Повреждён WAV: данные отсутствуют"
             }
             val frames = dataLength / frameBytes
-            require(frames > 0 && frames * 1.0 / rate <= MAX_SECONDS) {
-                "Максимальная длительность записи — 5 минут"
-            }
-            val mono = FloatArray(frames.toInt())
-            val frame = ByteArray(frameBytes)
+            require(frames > 0) { "Пустая аудиозапись" }
+
             raf.seek(dataStart)
-            for (i in mono.indices) {
-                if ((i and 8191) == 0) currentCoroutineContext().ensureActive()
-                raf.readFully(frame)
-                var sum = 0f
-                for (ch in 0 until channels) {
-                    val off = ch * (bits / 8)
-                    val s = when {
-                        format == 3 -> Float.fromBits(
-                            (frame[off].toInt() and 255) or
-                            ((frame[off + 1].toInt() and 255) shl 8) or
-                            ((frame[off + 2].toInt() and 255) shl 16) or
-                            (frame[off + 3].toInt() shl 24))
-                        bits == 8 -> ((frame[off].toInt() and 255) - 128) / 128f
-                        bits == 16 -> {
-                            val n = (frame[off].toInt() and 255) or (frame[off + 1].toInt() shl 8)
-                            n.toShort() / 32768f
+            val chunkSize = 65536
+            val mono = FloatArray(chunkSize)
+            val frame = ByteArray(frameBytes)
+            var framesRead = 0L
+
+            FileOutputStream(pcmOut).channel.use { outChannel ->
+                val resampler = Resampler(rate, TARGET_RATE, outChannel)
+                while (framesRead < frames) {
+                    currentCoroutineContext().ensureActive()
+                    val toRead = minOf(chunkSize.toLong(), frames - framesRead).toInt()
+                    for (i in 0 until toRead) {
+                        raf.readFully(frame)
+                        var sum = 0f
+                        for (ch in 0 until channels) {
+                            val off = ch * (bits / 8)
+                            val s = when {
+                                format == 3 -> Float.fromBits(
+                                    (frame[off].toInt() and 255) or
+                                    ((frame[off + 1].toInt() and 255) shl 8) or
+                                    ((frame[off + 2].toInt() and 255) shl 16) or
+                                    (frame[off + 3].toInt() shl 24))
+                                bits == 8 -> ((frame[off].toInt() and 255) - 128) / 128f
+                                bits == 16 -> {
+                                    val n = (frame[off].toInt() and 255) or (frame[off + 1].toInt() shl 8)
+                                    n.toShort() / 32768f
+                                }
+                                bits == 24 -> {
+                                    val n = (frame[off].toInt() and 255) or
+                                        ((frame[off + 1].toInt() and 255) shl 8) or
+                                        (frame[off + 2].toInt() shl 16)
+                                    n / 8388608f
+                                }
+                                else -> {
+                                    val n = (frame[off].toInt() and 255) or
+                                        ((frame[off + 1].toInt() and 255) shl 8) or
+                                        ((frame[off + 2].toInt() and 255) shl 16) or
+                                        (frame[off + 3].toInt() shl 24)
+                                    n / 2147483648f
+                                }
+                            }
+                            require(s.isFinite()) { "Повреждён WAV: нечисловые сэмплы" }
+                            sum += s
                         }
-                        bits == 24 -> {
-                            val n = (frame[off].toInt() and 255) or
-                                ((frame[off + 1].toInt() and 255) shl 8) or
-                                (frame[off + 2].toInt() shl 16)
-                            n / 8388608f
-                        }
-                        else -> {
-                            val n = (frame[off].toInt() and 255) or
-                                ((frame[off + 1].toInt() and 255) shl 8) or
-                                ((frame[off + 2].toInt() and 255) shl 16) or
-                                (frame[off + 3].toInt() shl 24)
-                            n / 2147483648f
-                        }
+                        mono[i] = (sum / channels).coerceIn(-1f, 1f)
                     }
-                    require(s.isFinite()) { "Повреждён WAV: нечисловые сэмплы" }
-                    sum += s
+                    resampler.process(mono, toRead)
+                    framesRead += toRead
                 }
-                mono[i] = (sum / channels).coerceIn(-1f, 1f)
+                resampler.flush()
+                return resampler.totalSamplesWritten
             }
-            return resample(mono, rate)
         }
     }
 
-    /** MP3/M4A/AAC/OGG/FLAC/AMR/etc are decoded by the device's native codecs. */
-    private suspend fun decodeWithMediaCodec(file: File): FloatArray {
+    private suspend fun decodeWithMediaCodec(file: File, pcmOut: File): Long {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         var started = false
@@ -133,10 +145,6 @@ internal object AudioToMono16k {
             } ?: error("В файле нет поддерживаемой аудиодорожки")
             val format = extractor.getTrackFormat(track)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: error("Неизвестный аудиокодек")
-            val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
-                format.getLong(MediaFormat.KEY_DURATION)
-            } else 0L
-            require(durationUs <= MAX_SECONDS * 1_000_000L) { "Максимальная длительность записи — 5 минут" }
             extractor.selectTrack(track)
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
@@ -148,76 +156,90 @@ internal object AudioToMono16k {
             var pcmEncoding = if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
                 outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
             } else AudioFormat.ENCODING_PCM_16BIT
-            val pcm = FloatCollector()
+
             var inputDone = false
             var outputDone = false
             var lastProgress = System.nanoTime()
             val info = MediaCodec.BufferInfo()
-            while (!outputDone) {
-                currentCoroutineContext().ensureActive()
-                if (!inputDone) {
-                    val idx = codec.dequeueInputBuffer(10_000)
-                    if (idx >= 0) {
-                        val b = codec.getInputBuffer(idx) ?: error("Нет входного буфера декодера")
-                        b.clear()
-                        val size = extractor.readSampleData(b, 0)
-                        if (size < 0) {
-                            codec.queueInputBuffer(idx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            codec.queueInputBuffer(idx, 0, size, extractor.sampleTime.coerceAtLeast(0L), 0)
-                            extractor.advance()
+            val monoChunk = FloatArray(16384)
+
+            FileOutputStream(pcmOut).channel.use { outChannel ->
+                var resampler = Resampler(sampleRate, TARGET_RATE, outChannel)
+                while (!outputDone) {
+                    currentCoroutineContext().ensureActive()
+                    if (!inputDone) {
+                        val idx = codec.dequeueInputBuffer(10_000)
+                        if (idx >= 0) {
+                            val b = codec.getInputBuffer(idx) ?: error("Нет входного буфера декодера")
+                            b.clear()
+                            val size = extractor.readSampleData(b, 0)
+                            if (size < 0) {
+                                codec.queueInputBuffer(idx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                codec.queueInputBuffer(idx, 0, size, extractor.sampleTime.coerceAtLeast(0L), 0)
+                                extractor.advance()
+                            }
+                            lastProgress = System.nanoTime()
                         }
-                        lastProgress = System.nanoTime()
                     }
-                }
-                when (val idx = codec.dequeueOutputBuffer(info, 10_000)) {
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        outFormat = codec.outputFormat
-                        sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                        channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                        pcmEncoding = if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
-                            outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
-                        } else AudioFormat.ENCODING_PCM_16BIT
-                        require(pcm.isEmpty) { "Декодер изменил параметры аудио посреди записи" }
-                    }
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
-                    else -> if (idx >= 0) {
-                        if (info.size > 0) {
-                            require(channels in 1..8 && sampleRate in 8_000..192_000) {
-                                "Некорректный формат декодированного аудио"
+                    when (val idx = codec.dequeueOutputBuffer(info, 10_000)) {
+                        MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            outFormat = codec.outputFormat
+                            val newSampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                            channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            pcmEncoding = if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                                outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                            } else AudioFormat.ENCODING_PCM_16BIT
+                            if (newSampleRate != sampleRate) {
+                                resampler.flush()
+                                sampleRate = newSampleRate
+                                resampler = Resampler(sampleRate, TARGET_RATE, outChannel)
                             }
-                            val b = codec.getOutputBuffer(idx) ?: error("Нет выходного буфера декодера")
-                            b.order(ByteOrder.LITTLE_ENDIAN)
-                            b.position(info.offset)
-                            b.limit(info.offset + info.size)
-                            val bytesPerSample = when (pcmEncoding) {
-                                AudioFormat.ENCODING_PCM_16BIT -> 2
-                                AudioFormat.ENCODING_PCM_FLOAT -> 4
-                                else -> error("Декодер вернул неподдерживаемый PCM: $pcmEncoding")
-                            }
-                            require(info.size % (channels * bytesPerSample) == 0) { "Некорректный PCM-буфер" }
-                            val frames = info.size / (channels * bytesPerSample)
-                            require(pcm.size + frames <= sampleRate * MAX_SECONDS) { "Аудио длиннее 5 минут" }
-                            repeat(frames) {
-                                var sum = 0f
-                                repeat(channels) {
-                                    sum += if (bytesPerSample == 2) b.short / 32768f else b.float
+                        }
+                        MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                        else -> if (idx >= 0) {
+                            if (info.size > 0) {
+                                require(channels in 1..8 && sampleRate in 8_000..192_000) {
+                                    "Некорректный формат декодированного аудио"
                                 }
-                                val value = sum / channels
-                                require(value.isFinite()) { "Некорректный PCM" }
-                                pcm.add(value.coerceIn(-1f, 1f))
+                                val b = codec.getOutputBuffer(idx) ?: error("Нет выходного буфера декодера")
+                                b.order(ByteOrder.LITTLE_ENDIAN)
+                                b.position(info.offset)
+                                b.limit(info.offset + info.size)
+                                val bytesPerSample = when (pcmEncoding) {
+                                    AudioFormat.ENCODING_PCM_16BIT -> 2
+                                    AudioFormat.ENCODING_PCM_FLOAT -> 4
+                                    else -> error("Декодер вернул неподдерживаемый PCM: $pcmEncoding")
+                                }
+                                require(info.size % (channels * bytesPerSample) == 0) { "Некорректный PCM-буфер" }
+                                val frames = info.size / (channels * bytesPerSample)
+
+                                var monoSize = 0
+                                var monoArray = monoChunk
+                                if (frames > monoChunk.size) monoArray = FloatArray(frames)
+
+                                repeat(frames) {
+                                    var sum = 0f
+                                    repeat(channels) {
+                                        sum += if (bytesPerSample == 2) b.short / 32768f else b.float
+                                    }
+                                    val value = sum / channels
+                                    require(value.isFinite()) { "Некорректный PCM" }
+                                    monoArray[monoSize++] = value.coerceIn(-1f, 1f)
+                                }
+                                resampler.process(monoArray, monoSize)
                             }
+                            codec.releaseOutputBuffer(idx, false)
+                            outputDone = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                            lastProgress = System.nanoTime()
                         }
-                        codec.releaseOutputBuffer(idx, false)
-                        outputDone = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                        lastProgress = System.nanoTime()
                     }
+                    require(System.nanoTime() - lastProgress < 30_000_000_000L) { "Декодер не отвечает" }
                 }
-                require(System.nanoTime() - lastProgress < 30_000_000_000L) { "Декодер не отвечает" }
+                resampler.flush()
+                return resampler.totalSamplesWritten
             }
-            require(!pcm.isEmpty) { "После декодирования нет аудиоданных" }
-            return resample(pcm.toArray(), sampleRate)
         } finally {
             if (started) runCatching { codec?.stop() }
             codec?.release()
@@ -225,21 +247,52 @@ internal object AudioToMono16k {
         }
     }
 
-    private suspend fun resample(input: FloatArray, originalRate: Int): FloatArray {
-        require(input.isNotEmpty()) { "Пустая аудиозапись" }
-        if (originalRate == TARGET_RATE) return input
-        val n = (input.size.toDouble() * TARGET_RATE / originalRate).roundToInt()
-        require(n in 1..MAX_SAMPLES) { "Максимальная длительность записи — 5 минут" }
-        val output = FloatArray(n)
-        for (i in output.indices) {
-            if ((i and 8191) == 0) currentCoroutineContext().ensureActive()
-            val pos = i.toDouble() * originalRate / TARGET_RATE
-            val left = pos.toInt().coerceIn(0, input.lastIndex)
-            val right = (left + 1).coerceAtMost(input.lastIndex)
-            val fraction = (pos - left).toFloat().coerceIn(0f, 1f)
-            output[i] = input[left] + (input[right] - input[left]) * fraction
+    private class Resampler(
+        val originalRate: Int,
+        val targetRate: Int,
+        val outChannel: FileChannel
+    ) {
+        private var inputTime = 0.0
+        private var lastSample = 0f
+        var totalSamplesWritten = 0L
+        private val buf = ByteBuffer.allocateDirect(65536 * 4).order(ByteOrder.LITTLE_ENDIAN)
+
+        fun process(chunk: FloatArray, size: Int) {
+            if (size == 0) return
+            if (originalRate == targetRate) {
+                for (i in 0 until size) {
+                    if (!buf.hasRemaining()) flush()
+                    buf.putFloat(chunk[i])
+                    totalSamplesWritten++
+                }
+                lastSample = chunk[size - 1]
+                return
+            }
+            val step = originalRate.toDouble() / targetRate.toDouble()
+            while (true) {
+                val inputIndex = inputTime.toInt()
+                if (inputIndex >= size) {
+                    inputTime -= size
+                    lastSample = chunk[size - 1]
+                    break
+                }
+                val fraction = (inputTime - inputIndex).toFloat()
+                val left = if (inputIndex == 0) lastSample else chunk[inputIndex - 1]
+                val right = chunk[inputIndex]
+                val v = left + (right - left) * fraction
+
+                if (!buf.hasRemaining()) flush()
+                buf.putFloat(v)
+                totalSamplesWritten++
+                inputTime += step
+            }
         }
-        return output
+
+        fun flush() {
+            buf.flip()
+            while (buf.hasRemaining()) outChannel.write(buf)
+            buf.clear()
+        }
     }
 
     private fun readU16(raf: RandomAccessFile): Int =
@@ -247,16 +300,4 @@ internal object AudioToMono16k {
 
     private fun readU32(raf: RandomAccessFile): Long =
         (readU16(raf).toLong() or (readU16(raf).toLong() shl 16)) and 0xffffffffL
-
-    private class FloatCollector {
-        private var values = FloatArray(16_384)
-        var size: Int = 0
-            private set
-        val isEmpty: Boolean get() = size == 0
-        fun add(value: Float) {
-            if (size == values.size) values = values.copyOf(values.size * 2)
-            values[size++] = value
-        }
-        fun toArray(): FloatArray = values.copyOf(size)
-    }
 }

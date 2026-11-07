@@ -28,14 +28,41 @@ class GigaamM2Test {
     @Test fun `split at quiet intervals and preserve all samples`() {
         val input = FloatArray(16_000 * 43) { 0.1f }
         for (i in 19 * 16_000 until 20 * 16_000) input[i] = 0f
-        val chunks = QuietPointChunker.split(input)
-        assertTrue(chunks.size >= 2)
-        assertEquals(0, chunks[0].offsetSamples)
-        assertEquals(input.size, chunks.sumOf { it.data.size })
-        chunks.forEach { assertTrue(it.data.size <= 22 * 16_000) }
-        for (i in 1 until chunks.size) assertEquals(
-            chunks[i - 1].offsetSamples + chunks[i - 1].data.size, chunks[i].offsetSamples
-        )
+
+        val tempFile = java.io.File.createTempFile("test_split", ".pcm")
+        try {
+            val bb = java.nio.ByteBuffer.allocateDirect(input.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            bb.asFloatBuffer().put(input)
+            java.io.FileOutputStream(tempFile).channel.use { ch ->
+                while (bb.hasRemaining()) ch.write(bb)
+            }
+
+            val chunks = QuietPointChunker.split(tempFile, input.size.toLong())
+            assertTrue(chunks.size >= 2)
+            assertEquals(0L, chunks[0].offsetSamples)
+            assertEquals(input.size.toLong(), chunks.sumOf { it.durationSamples.toLong() })
+            chunks.forEach { assertTrue(it.durationSamples <= 22 * 16_000) }
+            for (i in 1 until chunks.size) assertEquals(
+                chunks[i - 1].offsetSamples + chunks[i - 1].durationSamples, chunks[i].offsetSamples
+            )
+        } finally {
+            tempFile.delete()
+        }
+    }
+    @Test fun `quiet point chunker handles files longer than 300 seconds without exception`() {
+        val seconds = 360 // 6 minutes > 300 seconds
+        val samplesCount = 16_000L * seconds
+        val tempFile = java.io.File.createTempFile("test_360s", ".pcm")
+        try {
+            java.io.RandomAccessFile(tempFile, "rw").use { raf ->
+                raf.setLength(samplesCount * 4L)
+            }
+            val chunks = QuietPointChunker.split(tempFile, samplesCount)
+            assertTrue(chunks.size >= 16)
+            assertEquals(samplesCount, chunks.sumOf { it.durationSamples.toLong() })
+        } finally {
+            tempFile.delete()
+        }
     }
     @Test fun `russian token space boundaries and approximate word times`() {
         val toks = listOf(

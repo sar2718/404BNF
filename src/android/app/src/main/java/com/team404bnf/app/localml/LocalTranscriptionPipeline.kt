@@ -13,9 +13,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 
 /** Single locally running M2+M3 inference process, shared by the UI's recordings. */
-internal class LocalTranscriptionPipeline(context: Context) {
+internal class LocalTranscriptionPipeline(private val context: Context) {
     private val manager = ModelManager(context.applicationContext)
     private val sessions = OnnxSessionManager(manager)
 
@@ -25,23 +26,33 @@ internal class LocalTranscriptionPipeline(context: Context) {
         check(missing.isEmpty()) {
             "Модели не готовы (${missing.size} файлов). Нажмите «Скачать модели»."
         }
-        currentCoroutineContext().ensureActive()
-        progress("Читаем аудиофайл…")
-        val audio = AudioToMono16k.decode(file)
-        val duration = audio.size / 16_000.0
-        progress("Распознаём речь (GigaAM)…")
-        val started = System.nanoTime()
-        val asr = GigaamAsrEngine(manager, sessions).recognize(audio) { progress(it) }
-        currentCoroutineContext().ensureActive()
-        progress("Определяем говорящих (Silero + WeSpeaker)…")
-        val diar = WespeakerDiarizationEngine(sessions).diarize(audio) { progress(it) }
-        currentCoroutineContext().ensureActive()
-        progress("Создаём JSON v1…")
-        val digest = withContext(Dispatchers.IO) { sha256(file) }
-        val elapsed = (System.nanoTime() - started) / 1e9
-        val json = LocalTranscriptJson.build(asr, diar, duration, digest, elapsed)
-        currentCoroutineContext().ensureActive()
-        json
+
+        val pcmFile = File.createTempFile("audio_decode", ".pcm", context.cacheDir)
+        try {
+            currentCoroutineContext().ensureActive()
+            progress("Читаем аудиофайл…")
+            val totalSamples = AudioToMono16k.decode(file, pcmFile)
+            val duration = totalSamples / 16_000.0
+
+            progress("Распознаём речь (GigaAM)…")
+            val started = System.nanoTime()
+            val asr = GigaamAsrEngine(manager, sessions).recognize(pcmFile, totalSamples) { progress(it) }
+
+            currentCoroutineContext().ensureActive()
+            progress("Определяем говорящих (Silero + WeSpeaker)…")
+            val diar = WespeakerDiarizationEngine(sessions).diarize(pcmFile, totalSamples) { progress(it) }
+
+            currentCoroutineContext().ensureActive()
+            progress("Создаём JSON v1…")
+            val digest = withContext(Dispatchers.IO) { sha256(file) }
+            val elapsed = (System.nanoTime() - started) / 1e9
+            val json = LocalTranscriptJson.build(asr, diar, duration, digest, elapsed)
+
+            currentCoroutineContext().ensureActive()
+            json
+        } finally {
+            pcmFile.delete()
+        }
     }
 
     private suspend fun sha256(file: File): String {

@@ -1,45 +1,62 @@
 package com.team404bnf.ml.asr
 
-/** Exact split strategy of src/ml-core/processor_core/engines/gigaam.py. */
+import java.io.File
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/** Exact split strategy of src/ml-core/processor_core/engines/gigaam.py adapted for file streaming. */
 internal object QuietPointChunker {
-    data class Chunk(val offsetSamples: Int, val data: FloatArray)
-    fun split(input: FloatArray): List<Chunk> {
+    data class Chunk(val offsetSamples: Long, val durationSamples: Int)
+
+    fun split(pcmFile: File, totalSamples: Long): List<Chunk> {
         val maxLen = 22 * 16_000
         val quietFrom = 16 * 16_000
         val target = 20 * 16_000
         val window = 640
         val out = mutableListOf<Chunk>()
-        var cursor = 0
-        while (cursor < input.size) {
-            val remaining = input.size - cursor
-            if (remaining <= maxLen) {
-                out += Chunk(cursor, input.copyOfRange(cursor, input.size))
-                break
-            }
-            val lo = cursor + quietFrom
-            val hi = minOf(cursor + maxLen, input.size)
-            var bestRms = Double.POSITIVE_INFINITY
-            var bestDistance = Int.MAX_VALUE
-            var best = hi
-            var i = lo
-            while (i < maxOf(lo + 1, hi - window + 1)) {
-                var rms = 0.0
-                for (p in i until minOf(i + window, input.size)) {
-                    val v = input[p].toDouble()
-                    rms += v * v
+        var cursor = 0L
+
+        RandomAccessFile(pcmFile, "r").use { raf ->
+            val byteBuffer = ByteArray(maxLen * 4)
+            val floatBuffer = FloatArray(maxLen)
+
+            while (cursor < totalSamples) {
+                val remaining = totalSamples - cursor
+                if (remaining <= maxLen) {
+                    out += Chunk(cursor, remaining.toInt())
+                    break
                 }
-                rms /= minOf(window, input.size - i)
-                val distance = kotlin.math.abs(i - (cursor + target))
-                if (rms < bestRms || (rms == bestRms && distance < bestDistance)) {
-                    bestRms = rms
-                    bestDistance = distance
-                    best = i
+                val readSamples = maxLen
+                raf.seek(cursor * 4L)
+                raf.readFully(byteBuffer, 0, readSamples * 4)
+                ByteBuffer.wrap(byteBuffer, 0, readSamples * 4).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(floatBuffer, 0, readSamples)
+
+                val lo = quietFrom
+                val hi = maxLen
+                var bestRms = Double.POSITIVE_INFINITY
+                var bestDistance = Int.MAX_VALUE
+                var best = hi
+                var i = lo
+                while (i < hi - window + 1) {
+                    var rms = 0.0
+                    for (p in i until i + window) {
+                        val v = floatBuffer[p].toDouble()
+                        rms += v * v
+                    }
+                    rms /= window
+                    val distance = kotlin.math.abs(i - target)
+                    if (rms < bestRms || (rms == bestRms && distance < bestDistance)) {
+                        bestRms = rms
+                        bestDistance = distance
+                        best = i
+                    }
+                    i += window
                 }
-                i += window
+                require(best > 0) { "Invalid quiet split point" }
+                out += Chunk(cursor, best)
+                cursor += best
             }
-            require(best > cursor) { "Invalid quiet split point" }
-            out += Chunk(cursor, input.copyOfRange(cursor, best))
-            cursor = best
         }
         return out
     }

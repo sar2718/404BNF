@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
+import com.team404bnf.app.localml.AudioToMono16k
 import com.team404bnf.ml.ModelManager
 import com.team404bnf.ml.OnnxSessionManager
 import com.team404bnf.ml.asr.GigaamAsrEngine
@@ -25,16 +26,22 @@ class AsrDebugActivity : ComponentActivity() {
         if (uri == null) return@registerForActivityResult
         pick.isEnabled = false
         lifecycleScope.launch {
+            val sourceFile = java.io.File.createTempFile("debug_src", ".audio", cacheDir)
+            val pcmFile = java.io.File.createTempFile("debug_pcm", ".pcm", cacheDir)
             try {
-                val samples = withContext(Dispatchers.IO) {
-                    contentResolver.openInputStream(uri)?.use { Pcm16WavReader.read(it) }
-                        ?: error("Cannot open chosen file")
+                val totalSamples = withContext(Dispatchers.IO) {
+                    contentResolver.openInputStream(uri)?.use { input: java.io.InputStream ->
+                        java.io.FileOutputStream(sourceFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    AudioToMono16k.decode(sourceFile, pcmFile)
                 }
-                log("PCM16 WAV loaded: ${samples.size / 16000.0} seconds")
+                log("PCM16 WAV loaded: %.2f seconds".format(totalSamples / 16000.0))
                 val startNs = System.nanoTime()
                 val manager = ModelManager(applicationContext)
                 val engine = GigaamAsrEngine(manager, OnnxSessionManager(manager))
-                val result = engine.recognize(samples) { stage -> log(stage) }
+                val result = engine.recognize(pcmFile, totalSamples) { stage -> log(stage) }
                 val elapsed = (System.nanoTime() - startNs) / 1e9
                 log("✅ GigaAM completed in %.1fs; words=%d".format(elapsed, result.words.size))
                 log("TEXT: ${result.text}")
@@ -45,6 +52,8 @@ class AsrDebugActivity : ComponentActivity() {
             } catch (t: Throwable) {
                 log("❌ ${t.javaClass.simpleName}: ${t.message}")
             } finally {
+                sourceFile.delete()
+                pcmFile.delete()
                 pick.isEnabled = true
             }
         }

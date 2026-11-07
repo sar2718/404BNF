@@ -93,53 +93,116 @@ object DiarizationTimeline {
         return result
     }
 
-    /** Average linkage of cosine distances on unit-normalized embeddings; stable first-appearance IDs. */
+    /** Scalable Leader-Follower + Centroid AHC; handles unlimited embeddings with bounded memory and strict distance thresholds. */
     fun cluster(embeddings: List<FloatArray>, distance: Double = 0.55): List<Int> {
         require(distance > 0 && distance < 2 && distance.isFinite())
         val n = embeddings.size
         if (n == 0) return emptyList()
         if (n == 1) return listOf(0)
-        require(n <= 500) { "Too many embeddings for mobile agglomerative clustering" }
+
         val dimensions = embeddings[0].size
         require(dimensions > 0 && embeddings.all { it.size == dimensions && it.all(Float::isFinite) })
-        val norms = DoubleArray(n) { i ->
-            kotlin.math.sqrt(embeddings[i].sumOf { (it * it).toDouble() }).also {
-                require(it > 1e-8) { "Zero embedding" }
-            }
-        }
-        // Distances between currently live clusters. Lance-Williams UPGMA updates.
-        val dis = Array(n) { DoubleArray(n) }
-        for (i in 0 until n) for (j in i + 1 until n) {
-            var dot = 0.0
-            for (k in 0 until dimensions) dot += embeddings[i][k] * embeddings[j][k]
-            val v = 1.0 - (dot / (norms[i] * norms[j])).coerceIn(-1.0, 1.0)
-            dis[i][j] = v; dis[j][i] = v
-        }
-        val parent = IntArray(n) { it }
-        val sizes = IntArray(n) { 1 }
-        val active = BooleanArray(n) { true }
-        while (true) {
-            var left = -1
-            var right = -1
-            var closest = Double.POSITIVE_INFINITY
-            for (i in 0 until n) if (active[i]) for (j in i + 1 until n) if (active[j]) {
-                if (dis[i][j] < closest) {
-                    closest = dis[i][j]; left = i; right = j
+
+        // Stage 1: Leader-Follower Online Centroid Clustering
+        val microThreshold = minOf(distance, 0.40)
+
+        class ClusterNode(val centroid: DoubleArray, var count: Int)
+        val clusters = ArrayList<ClusterNode>()
+        val assignment = IntArray(n)
+
+        for (i in 0 until n) {
+            val emb = embeddings[i]
+            var norm = 0.0
+            for (v in emb) norm += v.toDouble() * v.toDouble()
+            norm = kotlin.math.sqrt(norm)
+            require(norm > 1e-8) { "Zero embedding" }
+
+            var bestIdx = -1
+            var bestDist = Double.POSITIVE_INFINITY
+
+            for (c in clusters.indices) {
+                val node = clusters[c]
+                var dot = 0.0
+                var nodeNormSq = 0.0
+                for (k in 0 until dimensions) {
+                    val cv = node.centroid[k]
+                    dot += (emb[k] / norm) * cv
+                    nodeNormSq += cv * cv
+                }
+                val nodeNorm = kotlin.math.sqrt(nodeNormSq)
+                if (nodeNorm > 1e-8) {
+                    val dist = 1.0 - (dot / nodeNorm).coerceIn(-1.0, 1.0)
+                    if (dist < bestDist) {
+                        bestDist = dist
+                        bestIdx = c
+                    }
                 }
             }
-            if (left < 0 || closest > distance) break
-            val total = sizes[left] + sizes[right]
-            for (k in 0 until n) if (active[k] && k != left && k != right) {
-                val updated = (dis[left][k] * sizes[left] + dis[right][k] * sizes[right]) / total
-                dis[left][k] = updated; dis[k][left] = updated
+
+            if (bestIdx >= 0 && bestDist <= microThreshold) {
+                val node = clusters[bestIdx]
+                for (d in 0 until dimensions) {
+                    node.centroid[d] += emb[d] / norm
+                }
+                node.count++
+                assignment[i] = bestIdx
+            } else {
+                val newCentroid = DoubleArray(dimensions) { k -> (emb[k] / norm).toDouble() }
+                clusters.add(ClusterNode(newCentroid, 1))
+                assignment[i] = clusters.lastIndex
             }
-            sizes[left] = total
-            active[right] = false
-            // Preserve membership via root table; cluster labels are normalized below.
-            for (i in 0 until n) if (parent[i] == right) parent[i] = left
         }
+
+        // Stage 2: Iteratively merge clusters whose centroid distance <= distance (0.55).
+        // STOPS strictly when minD > distance. NEVER forcibly merges distinct speakers!
+        val clusterParent = IntArray(clusters.size) { it }
+
+        while (true) {
+            var bestI = -1
+            var bestJ = -1
+            var minD = Double.POSITIVE_INFINITY
+            val k = clusters.size
+
+            for (i in 0 until k) {
+                if (clusterParent[i] != i) continue
+                val cI = clusters[i]
+                var normI = 0.0
+                for (v in cI.centroid) normI += v * v
+                normI = kotlin.math.sqrt(normI)
+
+                for (j in i + 1 until k) {
+                    if (clusterParent[j] != j) continue
+                    val cJ = clusters[j]
+                    var normJ = 0.0
+                    for (v in cJ.centroid) normJ += v * v
+                    normJ = kotlin.math.sqrt(normJ)
+
+                    var dot = 0.0
+                    for (dim in 0 until dimensions) dot += cI.centroid[dim] * cJ.centroid[dim]
+                    val dist = 1.0 - (dot / (normI * normJ)).coerceIn(-1.0, 1.0)
+                    if (dist < minD) {
+                        minD = dist
+                        bestI = i
+                        bestJ = j
+                    }
+                }
+            }
+
+            if (bestI < 0 || minD > distance) break
+
+            val cI = clusters[bestI]
+            val cJ = clusters[bestJ]
+            for (dim in 0 until dimensions) cI.centroid[dim] += cJ.centroid[dim]
+            cI.count += cJ.count
+            clusterParent[bestJ] = bestI
+            for (idx in 0 until k) {
+                if (clusterParent[idx] == bestJ) clusterParent[idx] = bestI
+            }
+        }
+
         val remap = LinkedHashMap<Int, Int>()
-        return parent.map { root -> remap.getOrPut(root) { remap.size } }
+        val clusterToFinal = clusterParent.map { root -> remap.getOrPut(root) { remap.size } }
+        return List(n) { clusterToFinal[assignment[it]] }
     }
 
     /** Quantize to 160 ms within every VAD turn, then merge adjacent equal-speaker spans. */

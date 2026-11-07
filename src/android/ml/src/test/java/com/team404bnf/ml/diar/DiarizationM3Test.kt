@@ -61,4 +61,50 @@ class DiarizationM3Test {
             DiarizationTimeline.cluster(listOf(floatArrayOf(0f, 0f), floatArrayOf(1f, 0f)))
         }
     }
+    @Test fun largeNumberOfEmbeddingsClustersWithoutException() {
+        // A. 600 embeddings, two alternating speakers -> should return 2 distinct speaker IDs
+        val speakerA = FloatArray(192) { if (it % 2 == 0) 1.0f / 9.797959f else 0.0f }
+        val speakerB = FloatArray(192) { if (it % 2 != 0) 1.0f / 9.797959f else 0.0f }
+        val embeddings = List(600) { index -> if (index % 2 == 0) speakerA else speakerB }
+
+        val labels = DiarizationTimeline.cluster(embeddings, 0.55)
+        assertEquals(600, labels.size)
+        assertEquals(2, labels.distinct().size)
+    }
+
+    @Test fun largeNumberOfDistinctEmbeddingsNotForcedToMerge() {
+        // B. 600 distinct Gaussian random unit vectors in 192D -> max similarity ~0.25 (distance > 0.75 > 0.55)
+        var seed = 123456789L
+        fun nextGaussian(): Double {
+            seed = (seed * 6364136223846793005L + 1442695040888963407L)
+            val u1 = ((seed ushr 12) and 0x1FFFFFFFFFFFFFL).toDouble() / (1L shl 53).toDouble()
+            seed = (seed * 6364136223846793005L + 1442695040888963407L)
+            val u2 = ((seed ushr 12) and 0x1FFFFFFFFFFFFFL).toDouble() / (1L shl 53).toDouble()
+            return kotlin.math.sqrt(-2.0 * kotlin.math.ln(maxOf(1e-10, u1))) * kotlin.math.cos(2.0 * kotlin.math.PI * u2)
+        }
+
+        val embeddings = List(600) {
+            val vec = FloatArray(192) { nextGaussian().toFloat() }
+            val norm = kotlin.math.sqrt(vec.sumOf { (it * it).toDouble() }).toFloat()
+            FloatArray(192) { dim -> vec[dim] / norm }
+        }
+
+        val labels = DiarizationTimeline.cluster(embeddings, 0.55)
+        assertEquals(600, labels.size)
+        assertEquals(600, labels.distinct().size) // All 600 distinct vectors remain unmerged!
+    }
+
+    @Test fun speakerReappearancePreservesSpeakerId() {
+        // C. Reappearance of Speaker A after 500 other embeddings
+        val speakerA = FloatArray(192) { if (it % 2 == 0) 1.0f / 9.797959f else 0.0f }
+        val speakerB = FloatArray(192) { if (it % 2 != 0) 1.0f / 9.797959f else 0.0f }
+        val list = ArrayList<FloatArray>()
+        list.add(speakerA) // Index 0: Speaker A
+        repeat(500) { list.add(speakerB) } // Index 1..500: Speaker B
+        list.add(speakerA) // Index 501: Speaker A reappears!
+
+        val labels = DiarizationTimeline.cluster(list, 0.55)
+        assertEquals(502, labels.size)
+        assertEquals(labels[0], labels[501]) // Same speaker ID preserved!
+    }
 }

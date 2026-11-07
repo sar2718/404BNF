@@ -1,0 +1,82 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/DALVIK VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+/bin/
+/gen/
+/out/
+build/
+*/build/
+
+# Gradle files
+.gradle/
+local.properties
+
+# Android Studio / IntelliJ IDEA
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml
+.idea/shelf/
+*.iml
+*.iws
+*.ipr
+.kotlin/
+
+# Native build
+.externalNativeBuild/
+.cxx/
+cmake/
+
+# Log & capture files
+*.log
+/captures/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Machine Learning models (ONNX, GGUF, LiteRT/TFLite, Binaries)
+*.onnx
+*.gguf
+*.tflite
+*.bin
+*.pt
+*.pth
+
+# Audio files (Personal recordings & test audio exports)
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.aac
+
+# Secrets, Keystores & Private Configuration
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+google-services.json
+
+# Local Android Studio settings
+/.idea/

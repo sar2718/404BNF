@@ -1,0 +1,1556 @@
+{
+  "id": "01_dialog_clean",
+  "audio": "data/01_dialog_clean.wav",
+  "duration": 61.453,
+  "asr_model": "gigaam-v3-e2e-rnnt",
+  "diarization": "pyannote-community-1",
+  "pipeline_version": 2,
+  "timing_precision": "approx_word_from_rnnt_subwords",
+  "asr_chunking": "quiet_points_max_22_seconds",
+  "text": "Илья, привет. Давай начнём. Расскажи, чем занимался на прошлой неделе? Привет, Алексей. В основном работал над задачей по логированию, частично трогал старый сервис. Окей, по логированию какой статус сейчас? Основной код написал, но долго разбирался с существующей архитектурой, там много неочевидного. Что именно вызвало сложности? Связи между модулями плюс требования в тикете оказались не совсем полными. Понял. Ты уточнял это заранее или уже в процессе? Уже в процессе, да, наверное, поздновато. Такое бывает. По срокам ты успеваешь закрыть задачу в этом спринте? Честно, нет, я бы предложил перенести часть на следующий спринт. Согласен. Тогда фиксируем перенос второй части задания. Ок, спасибо. А первую часть сможешь довести до конца? Да, думаю, да, если без новых требований. Дедлайн тогда оставим до 15 марта, подходит? Да, нормально. Хорошо, про второй сервис, ты его только читал или что-то менял?",
+  "segments": [
+    {
+      "start": 0.16,
+      "end": 4.2,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Илья, привет. Давай начнём. Расскажи, чем занимался на прошлой неделе?",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 4.56,
+      "end": 9.48,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Привет, Алексей. В основном работал над задачей по логированию, частично трогал старый сервис.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 9.64,
+      "end": 12.44,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Окей, по логированию какой статус сейчас?",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 13.12,
+      "end": 19.2,
+      "speaker_id": "SPEAKER_01",
+      "overlap": true,
+      "speaker_ambiguous": false,
+      "text": "Основной код написал, но долго разбирался с существующей архитектурой, там много неочевидного. Что именно вызвало",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 19.24,
+      "end": 20.0,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "сложности?",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 21.08,
+      "end": 25.16,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Связи между модулями плюс требования в тикете оказались не совсем полными.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 25.2,
+      "end": 28.68,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Понял. Ты уточнял это заранее или уже в процессе?",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 28.96,
+      "end": 31.28,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Уже в процессе, да, наверное, поздновато.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 31.36,
+      "end": 36.2,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Такое бывает. По срокам ты успеваешь закрыть задачу в этом спринте?",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 36.72,
+      "end": 40.36,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Честно, нет, я бы предложил перенести часть на следующий спринт.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 40.96,
+      "end": 44.16,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Согласен. Тогда фиксируем перенос второй части задания.",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 45.12,
+      "end": 46.16,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Ок, спасибо.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 46.36,
+      "end": 48.64,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "А первую часть сможешь довести до конца?",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 48.92,
+      "end": 51.16,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Да, думаю, да, если без новых требований.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 51.24,
+      "end": 54.84,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Дедлайн тогда оставим до 15 марта, подходит? Да,",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 54.88,
+      "end": 55.48,
+      "speaker_id": "SPEAKER_01",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "нормально.",
+      "speaker_label": "Участник 2"
+    },
+    {
+      "start": 55.72,
+      "end": 56.36,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "Хорошо,",
+      "speaker_label": "Участник 1"
+    },
+    {
+      "start": 57.4,
+      "end": 61.4,
+      "speaker_id": "SPEAKER_00",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "text": "про второй сервис, ты его только читал или что-то менял?",
+      "speaker_label": "Участник 1"
+    }
+  ],
+  "words": [
+    {
+      "text": "Илья,",
+      "start": 0.16,
+      "end": 0.64,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "привет.",
+      "start": 0.64,
+      "end": 1.2,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Давай",
+      "start": 1.28,
+      "end": 1.4,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "начнём.",
+      "start": 1.56,
+      "end": 2.0,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Расскажи,",
+      "start": 2.0,
+      "end": 2.56,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "чем",
+      "start": 2.56,
+      "end": 2.68,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "занимался",
+      "start": 2.76,
+      "end": 3.2,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "на",
+      "start": 3.24,
+      "end": 3.36,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "прошлой",
+      "start": 3.36,
+      "end": 3.68,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "неделе?",
+      "start": 3.68,
+      "end": 4.2,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Привет,",
+      "start": 4.56,
+      "end": 5.0,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Алексей.",
+      "start": 5.0,
+      "end": 5.48,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "В",
+      "start": 5.48,
+      "end": 5.56,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "основном",
+      "start": 5.56,
+      "end": 5.92,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "работал",
+      "start": 6.0,
+      "end": 6.36,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "над",
+      "start": 6.36,
+      "end": 6.52,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "задачей",
+      "start": 6.52,
+      "end": 6.88,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "по",
+      "start": 6.88,
+      "end": 7.0,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "логированию,",
+      "start": 7.04,
+      "end": 7.68,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "частично",
+      "start": 7.68,
+      "end": 8.04,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "трогал",
+      "start": 8.08,
+      "end": 8.48,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "старый",
+      "start": 8.48,
+      "end": 8.8,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "сервис.",
+      "start": 8.92,
+      "end": 9.48,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Окей,",
+      "start": 9.64,
+      "end": 10.24,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "по",
+      "start": 10.32,
+      "end": 10.44,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "логированию",
+      "start": 10.52,
+      "end": 11.12,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "какой",
+      "start": 11.2,
+      "end": 11.32,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "статус",
+      "start": 11.56,
+      "end": 11.68,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "сейчас?",
+      "start": 11.96,
+      "end": 12.44,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Основной",
+      "start": 13.12,
+      "end": 13.6,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "код",
+      "start": 13.64,
+      "end": 13.88,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "написал,",
+      "start": 13.88,
+      "end": 14.4,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "но",
+      "start": 14.4,
+      "end": 14.52,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "долго",
+      "start": 14.52,
+      "end": 14.8,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "разбирался",
+      "start": 14.8,
+      "end": 15.24,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "с",
+      "start": 15.32,
+      "end": 15.44,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "существующей",
+      "start": 15.44,
+      "end": 16.0,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "архитектурой,",
+      "start": 16.04,
+      "end": 16.72,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "там",
+      "start": 16.72,
+      "end": 16.84,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "много",
+      "start": 16.88,
+      "end": 17.0,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "неочевидного.",
+      "start": 17.12,
+      "end": 18.08,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Что",
+      "start": 18.32,
+      "end": 18.44,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "именно",
+      "start": 18.52,
+      "end": 18.64,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "вызвало",
+      "start": 18.8,
+      "end": 19.2,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": true,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "сложности?",
+      "start": 19.24,
+      "end": 20.0,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Связи",
+      "start": 21.08,
+      "end": 21.56,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "между",
+      "start": 21.6,
+      "end": 21.72,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "модулями",
+      "start": 21.88,
+      "end": 22.4,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "плюс",
+      "start": 22.48,
+      "end": 22.76,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "требования",
+      "start": 22.76,
+      "end": 23.12,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "в",
+      "start": 23.16,
+      "end": 23.28,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "тикете",
+      "start": 23.28,
+      "end": 23.68,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "оказались",
+      "start": 23.72,
+      "end": 24.12,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "не",
+      "start": 24.12,
+      "end": 24.24,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "совсем",
+      "start": 24.24,
+      "end": 24.6,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "полными.",
+      "start": 24.6,
+      "end": 25.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Понял.",
+      "start": 25.2,
+      "end": 25.8,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Ты",
+      "start": 26.0,
+      "end": 26.12,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "уточнял",
+      "start": 26.32,
+      "end": 26.88,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "это",
+      "start": 26.88,
+      "end": 27.0,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "заранее",
+      "start": 27.04,
+      "end": 27.52,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "или",
+      "start": 27.6,
+      "end": 27.72,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "уже",
+      "start": 27.8,
+      "end": 27.92,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "в",
+      "start": 27.96,
+      "end": 28.08,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "процессе?",
+      "start": 28.08,
+      "end": 28.68,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Уже",
+      "start": 28.96,
+      "end": 29.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "в",
+      "start": 29.2,
+      "end": 29.32,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "процессе,",
+      "start": 29.32,
+      "end": 29.88,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "да,",
+      "start": 29.88,
+      "end": 30.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "наверное,",
+      "start": 30.16,
+      "end": 30.52,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "поздновато.",
+      "start": 30.52,
+      "end": 31.28,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Такое",
+      "start": 31.36,
+      "end": 31.64,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "бывает.",
+      "start": 31.68,
+      "end": 32.28,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "По",
+      "start": 32.76,
+      "end": 32.88,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "срокам",
+      "start": 32.92,
+      "end": 33.4,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "ты",
+      "start": 33.44,
+      "end": 33.56,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "успеваешь",
+      "start": 33.84,
+      "end": 34.4,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "закрыть",
+      "start": 34.44,
+      "end": 34.76,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "задачу",
+      "start": 34.76,
+      "end": 34.88,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "в",
+      "start": 35.12,
+      "end": 35.2,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "этом",
+      "start": 35.2,
+      "end": 35.36,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "спринте?",
+      "start": 35.36,
+      "end": 36.2,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Честно,",
+      "start": 36.72,
+      "end": 37.24,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "нет,",
+      "start": 37.24,
+      "end": 37.52,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "я",
+      "start": 37.52,
+      "end": 37.64,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "бы",
+      "start": 37.64,
+      "end": 37.76,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "предложил",
+      "start": 37.8,
+      "end": 38.32,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "перенести",
+      "start": 38.32,
+      "end": 38.76,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "часть",
+      "start": 38.8,
+      "end": 38.92,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "на",
+      "start": 39.08,
+      "end": 39.2,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "следующий",
+      "start": 39.28,
+      "end": 39.64,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "спринт.",
+      "start": 39.64,
+      "end": 40.36,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Согласен.",
+      "start": 40.96,
+      "end": 41.68,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Тогда",
+      "start": 41.8,
+      "end": 42.08,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "фиксируем",
+      "start": 42.12,
+      "end": 42.56,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "перенос",
+      "start": 42.56,
+      "end": 42.92,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "второй",
+      "start": 42.92,
+      "end": 43.16,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "части",
+      "start": 43.16,
+      "end": 43.44,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "задания.",
+      "start": 43.44,
+      "end": 44.16,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Ок,",
+      "start": 45.12,
+      "end": 45.6,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "спасибо.",
+      "start": 45.64,
+      "end": 46.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "А",
+      "start": 46.36,
+      "end": 46.48,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "первую",
+      "start": 46.52,
+      "end": 46.84,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "часть",
+      "start": 46.84,
+      "end": 46.96,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "сможешь",
+      "start": 47.12,
+      "end": 47.52,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "довести",
+      "start": 47.6,
+      "end": 47.88,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "до",
+      "start": 48.04,
+      "end": 48.16,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "конца?",
+      "start": 48.16,
+      "end": 48.64,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Да,",
+      "start": 48.92,
+      "end": 49.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "думаю,",
+      "start": 49.24,
+      "end": 49.6,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "да,",
+      "start": 49.6,
+      "end": 49.8,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "если",
+      "start": 49.84,
+      "end": 49.96,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "без",
+      "start": 50.04,
+      "end": 50.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "новых",
+      "start": 50.28,
+      "end": 50.4,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "требований.",
+      "start": 50.56,
+      "end": 51.16,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Дедлайн",
+      "start": 51.24,
+      "end": 51.76,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "тогда",
+      "start": 51.76,
+      "end": 51.88,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "оставим",
+      "start": 51.96,
+      "end": 52.44,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "до",
+      "start": 52.44,
+      "end": 52.56,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "15",
+      "start": 52.6,
+      "end": 52.92,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "марта,",
+      "start": 53.28,
+      "end": 53.8,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "подходит?",
+      "start": 53.8,
+      "end": 54.4,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "Да,",
+      "start": 54.64,
+      "end": 54.84,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "нормально.",
+      "start": 54.88,
+      "end": 55.48,
+      "speaker_id": "SPEAKER_01",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 2"
+    },
+    {
+      "text": "Хорошо,",
+      "start": 55.72,
+      "end": 56.36,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "про",
+      "start": 57.4,
+      "end": 57.52,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "второй",
+      "start": 57.64,
+      "end": 58.04,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "сервис,",
+      "start": 58.2,
+      "end": 58.88,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "ты",
+      "start": 58.92,
+      "end": 59.04,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "его",
+      "start": 59.12,
+      "end": 59.24,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "только",
+      "start": 59.44,
+      "end": 59.56,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "читал",
+      "start": 59.76,
+      "end": 60.08,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "или",
+      "start": 60.12,
+      "end": 60.24,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "что-то",
+      "start": 60.36,
+      "end": 60.64,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    },
+    {
+      "text": "менял?",
+      "start": 60.8,
+      "end": 61.4,
+      "speaker_id": "SPEAKER_00",
+      "timing_source": "onnx_rnnt_token_estimate",
+      "overlap": false,
+      "speaker_ambiguous": false,
+      "speaker_label": "Участник 1"
+    }
+  ],
+  "chunks": [
+    {
+      "start": 0.0,
+      "end": 20.36,
+      "word_count": 45
+    },
+    {
+      "start": 20.36,
+      "end": 40.36,
+      "word_count": 47
+    },
+    {
+      "start": 40.36,
+      "end": 61.453,
+      "word_count": 43
+    }
+  ],
+  "speaker_labels": {
+    "SPEAKER_00": "Участник 1",
+    "SPEAKER_01": "Участник 2"
+  },
+  "speakers_detected": 2,
+  "words_unassigned": 0,
+  "words_ambiguous": 0,
+  "inference_seconds": 10.123,
+  "rtf": 0.1647,
+  "cached_diarization_seconds": 177.289,
+  "estimated_total_seconds": 187.412,
+  "estimated_total_rtf": 3.0497
+}

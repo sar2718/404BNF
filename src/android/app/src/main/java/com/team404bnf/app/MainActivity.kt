@@ -31,7 +31,6 @@ import com.team404bnf.app.ui.playback.PlaybackScreen
 import com.team404bnf.app.ui.recorder.RecorderScreen
 import com.team404bnf.app.ui.recorder.RecorderViewModel
 import com.team404bnf.app.ui.theme.BnfTheme
-import com.team404bnf.app.ui.transcript.TranscriptScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -139,12 +138,6 @@ class MainActivity : ComponentActivity() {
                                         navController.navigate("recorder")
                                     },
 
-                                    onRecordingOpen = { recordingId ->
-                                        navController.navigate(
-                                            "transcript/$recordingId"
-                                        )
-                                    },
-
                                     onSavedRecordingOpen = { recordingId ->
                                         navController.navigate(
                                             "player/$recordingId"
@@ -172,23 +165,6 @@ class MainActivity : ComponentActivity() {
                             composable("recorder") {
                                 RecorderScreen(
                                     viewModel = recorderViewModel,
-
-                                    onBack = {
-                                        navController.popBackStack()
-                                    }
-                                )
-                            }
-
-                            composable("transcript/{recordingId}") {
-                                    backStackEntry ->
-
-                                val recordingId =
-                                    backStackEntry.arguments
-                                        ?.getString("recordingId")
-                                        .orEmpty()
-
-                                TranscriptScreen(
-                                    recordingId = recordingId,
 
                                     onBack = {
                                         navController.popBackStack()

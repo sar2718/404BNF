@@ -31,21 +31,6 @@ data class RecordingPreview(
     val date: String
 )
 
-private val demoRecordings = listOf(
-    RecordingPreview(
-        "1", "Запись 03.11, 14:35",
-        "2 участника · 05:32", "14:35"
-    ),
-    RecordingPreview(
-        "2", "Запись 02.11, 18:20",
-        "3 участника · 12:48", "Пн"
-    ),
-    RecordingPreview(
-        "3", "Запись 25.10, 11:10",
-        "Обработка завершена · 08:15", "25/10"
-    )
-)
-
 @Composable
 fun LibraryScreen(
     savedRecordings: List<RecordingPreview>,
@@ -53,7 +38,6 @@ fun LibraryScreen(
     deleteError: String?,
     onDeleteRecordings: (Set<String>) -> Unit,
     onNewRecording: () -> Unit,
-    onRecordingOpen: (String) -> Unit,
     onSavedRecordingOpen: (String) -> Unit,
     importing: Boolean,
     importError: String?,
@@ -255,29 +239,6 @@ fun LibraryScreen(
                         },
                         onOpen = {
                             onSavedRecordingOpen(recording.id)
-                        }
-                    )
-                }
-
-                item {
-                    Text(
-                        text = "Демонстрационные записи",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-
-                items(
-                    items = demoRecordings,
-                    key = { "demo_${it.id}" }
-                ) { recording ->
-
-                    RecordingRow(
-                        recording = recording,
-                        enabled = !selectionMode,
-                        onClick = {
-                            onRecordingOpen(recording.id)
                         }
                     )
                 }

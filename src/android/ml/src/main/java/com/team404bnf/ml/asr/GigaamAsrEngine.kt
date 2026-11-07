@@ -49,30 +49,52 @@ class GigaamAsrEngine(
         require(mono16k.all { it.isFinite() && it in -1.0001f..1.0001f }) { "Invalid Float32 audio" }
         val vocab = RnntText.Vocab(modelManager.checkedFile(vocabAsset))
         val chunks = QuietPointChunker.split(mono16k)
+
+        class EncodedChunk(
+            val offsetSamples: Int,
+            val durationSamples: Int,
+            val encoded: Encoded
+        )
+        val encodedChunks = mutableListOf<EncodedChunk>()
+        val jobContext = currentCoroutineContext()
+
+        sessions.withSession(encoder) { session ->
+            chunks.forEachIndexed { index, chunk ->
+                jobContext.ensureActive()
+                // Python A5 feeds PCM16 WAV chunks to onnx-asr (quantizes source samples).
+                val quantized = FloatArray(chunk.data.size) { i ->
+                    (chunk.data[i] * 32768f).toInt().coerceIn(-32768, 32767) / 32768f
+                }
+                if (quantized.size >= GigaamFeatureExtractor.FRAME_SIZE) {
+                    onStage("Chunk ${index + 1}/${chunks.size}: feature extraction")
+                    val inputFeatures = features.extract(quantized)
+                    onStage("Chunk ${index + 1}/${chunks.size}: GigaAM encoder")
+                    val encoded = encode(session, inputFeatures)
+                    encodedChunks.add(EncodedChunk(chunk.offsetSamples, chunk.data.size, encoded))
+                }
+            }
+        }
+
         val words = mutableListOf<AsrWord>()
         val texts = mutableListOf<String>()
-        chunks.forEachIndexed { index, chunk ->
-            currentCoroutineContext().ensureActive()
-            // Python A5 feeds PCM16 WAV chunks to onnx-asr (quantizes source samples).
-            val quantized = FloatArray(chunk.data.size) { i ->
-                (chunk.data[i] * 32768f).toInt().coerceIn(-32768, 32767) / 32768f
+
+        if (encodedChunks.isNotEmpty()) {
+            sessions.withSessions(listOf(decoder, joint)) { opened ->
+                encodedChunks.forEachIndexed { index, item ->
+                    jobContext.ensureActive()
+                    onStage("Chunk ${index + 1}/${encodedChunks.size}: RNNT decoder")
+                    val ids = decodeRnnt(opened[0], opened[1], item.encoded, vocab.blankId) {
+                        jobContext.ensureActive()
+                    }
+                    val partial = RnntText.decode(
+                        ids, vocab.tokens, item.offsetSamples / 16_000.0, item.durationSamples / 16_000.0,
+                    )
+                    texts.add(partial.text.trim())
+                    words.addAll(partial.words)
+                }
             }
-            if (quantized.size < GigaamFeatureExtractor.FRAME_SIZE) return@forEachIndexed
-            onStage("Chunk ${index + 1}/${chunks.size}: feature extraction")
-            val inputFeatures = features.extract(quantized)
-            onStage("Chunk ${index + 1}/${chunks.size}: GigaAM encoder")
-            val encoded = sessions.withSession(encoder) { session -> encode(session, inputFeatures) }
-            currentCoroutineContext().ensureActive()
-            onStage("Chunk ${index + 1}/${chunks.size}: RNNT decoder")
-            val ids = sessions.withSessions(listOf(decoder, joint)) { opened ->
-                decodeRnnt(opened[0], opened[1], encoded, vocab.blankId)
-            }
-            val partial = RnntText.decode(
-                ids, vocab.tokens, chunk.offsetSamples / 16_000.0, chunk.data.size / 16_000.0,
-            )
-            texts.add(partial.text.trim())
-            words.addAll(partial.words)
         }
+
         AsrOutput(texts.filter { it.isNotEmpty() }.joinToString(" "), words)
     }
 
@@ -104,7 +126,7 @@ class GigaamAsrEngine(
 
     private fun decodeRnnt(
         decSession: OrtSession, jointSession: OrtSession,
-        encoded: Encoded, blankId: Int,
+        encoded: Encoded, blankId: Int, cancelCheck: () -> Unit
     ): List<RnntText.Emission> {
         val emitted = ArrayList<RnntText.Emission>()
         var h = FloatArray(320)
@@ -114,6 +136,7 @@ class GigaamAsrEngine(
         var perFrame = 0
         val encFrame = FloatArray(encoded.channels)
         while (frame < encoded.validTime) {
+            cancelCheck()
             // encoded is [1, channels, T]; onnx-asr transposes to [1, T, channels].
             for (channel in 0 until encoded.channels) {
                 encFrame[channel] = encoded.values[channel * encoded.time + frame]

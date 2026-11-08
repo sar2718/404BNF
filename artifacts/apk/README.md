@@ -14,21 +14,13 @@ sha256sum -c SHA256SUMS
 
 ## Получение APK из GitHub Releases
 
-[Открыть релизы 404BNF](https://github.com/sar2718/404BNF/releases). Ищите `v1.0.0-debug` с названием **404BNF 1.0 — Hackathon Debug** и отметкой prerelease. Вложения:
+[404BNF 1.0 — Hackathon Debug](https://github.com/sar2718/404BNF/releases/tag/v1.0.0-debug) опубликован с отметкой prerelease. Вложения доступны без авторизации:
 
-- `404BNF-1.0-debug.apk` — установочный пакет;
-- `SHA256SUMS` — контрольная сумма;
-- `manifest.json` — паспорт сборки.
+- [404BNF-1.0-debug.apk](https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/404BNF-1.0-debug.apk) — установочный пакет;
+- [SHA256SUMS](https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/SHA256SUMS) — контрольная сумма;
+- [manifest.json](https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/manifest.json) — паспорт сборки.
 
-На момент проверки 8 ноября 2026 все три файла загружены в черновик релиза; их серверные SHA-256 совпадают с локальными файлами. Черновик необходимо опубликовать, чтобы вложения стали доступны экспертам. Само открытие страницы через `gh release view --web` не публикует релиз.
-
-После публикации постоянные ссылки будут доступны по адресам:
-
-```text
-https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/404BNF-1.0-debug.apk
-https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/SHA256SUMS
-https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/manifest.json
-```
+8 ноября 2026 проверено: релиз опубликован, все три вложения загружены, их серверные SHA-256 совпадают с локальными файлами. Доступ к APK без авторизации подтверждён ответом HTTP 200.
 
 Скачайте APK и SHA256SUMS в одну папку, затем выполните `sha256sum -c SHA256SUMS`. Для установки следуйте [инструкции](../../docs/INSTALLATION.md).
 

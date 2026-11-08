@@ -8,7 +8,7 @@ Android-приложение для записи разговоров, лока�
 
 | Материал | Ссылка / статус |
 | --- | --- |
-| APK | [GitHub Releases — 404BNF 1.0 Debug](https://github.com/sar2718/404BNF/releases) · [паспорт и SHA-256](artifacts/apk/README.md) |
+| APK | [Скачать 404BNF 1.0 Debug APK](https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/404BNF-1.0-debug.apk) · [паспорт и SHA-256](artifacts/apk/README.md) |
 | Исходный код | [Android-проект](src/android/) |
 | Инструкция | [Установка, сборка и использование](docs/INSTALLATION.md) |
 | Архитектура | [Компоненты и потоки данных](docs/ARCHITECTURE.md) |
@@ -17,7 +17,7 @@ Android-приложение для записи разговоров, лока�
 | Тестирование | [Результаты и воспроизведение](docs/TEST_RESULTS.md) |
 | Видеодемонстрация | Не предоставлена — [статус материалов](docs/LIMITATIONS.md#материалы-для-сдачи) |
 
-APK передаётся через вложения релиза `v1.0.0-debug`. Для доступа экспертов релиз должен быть опубликован; черновик доступен только пользователям с соответствующими правами репозитория.
+Debug APK доступен в [опубликованном релизе `v1.0.0-debug`](https://github.com/sar2718/404BNF/releases/tag/v1.0.0-debug) с отметкой prerelease. Скачивание доступно без авторизации.
 
 ## Возможности
 

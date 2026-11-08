@@ -281,15 +281,17 @@ class RecordingRepository(
                     "Недопустимый путь к аудиофайлу"
                 }
 
-                // Удаляем аудио
-                if (directory.exists()) {
-                    check(directory.deleteRecursively()) {
-                        "Не удалось удалить аудиофайлы"
+                com.team404bnf.app.transcription.TranscriptionTaskManager.deleteIfInactive(id) {
+                    // Удаляем аудио
+                    if (directory.exists()) {
+                        check(directory.deleteRecursively()) {
+                            "Не удалось удалить аудиофайлы"
+                        }
                     }
-                }
 
-                // Удаляем запись и связанные данные Room
-                dao.deleteRecordingById(id)
+                    // Удаляем запись и связанные данные Room
+                    dao.deleteRecordingById(id)
+                }
             }
         }
 }

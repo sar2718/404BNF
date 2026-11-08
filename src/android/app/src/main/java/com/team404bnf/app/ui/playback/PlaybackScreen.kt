@@ -1,7 +1,5 @@
 package com.team404bnf.app.ui.playback
 
-import android.content.pm.ApplicationInfo
-
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
@@ -32,7 +30,6 @@ fun PlaybackScreen(
     val playback by viewModel.playbackState.collectAsState()
     val recording by RecordingSession.state.collectAsState()
 
-    val jsonImport by viewModel.jsonImportState.collectAsState()
     val localMl by viewModel.localMlState.collectAsState()
     val transcriptDisplay by viewModel.transcriptDisplayState.collectAsState()
 
@@ -140,20 +137,6 @@ fun PlaybackScreen(
             version = version
         )
         jsonExportLauncher.launch(fileName)
-    }
-
-    val showDebugImport = remember(context) {
-        (context.applicationInfo.flags and
-            ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    }
-
-    val jsonPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-
-        if (uri != null) {
-            viewModel.importJson(uri)
-        }
     }
 
     val recordingActive = recording.status in setOf(
@@ -309,19 +292,19 @@ fun PlaybackScreen(
                 renameEnabled = !renaming &&
                     !screen.loading &&
                     screen.error == null,
-                hasTranscript = jsonImport.hasTranscript,
+                hasTranscript = transcriptDisplay.hasTranscript,
                 hasDeletedSegments =
                     recovery.deletedSegments.isNotEmpty(),
                 hasUserEdits = recovery.hasUserEdits,
                 canExportTranscript =
-                    jsonImport.hasTranscript &&
+                    transcriptDisplay.hasTranscript &&
                     !editing &&
                     !txtExport.inProgress &&
                     transcriptDisplay.error == null &&
                     !transcriptDisplay.loading &&
                     transcriptDisplay.segments.isNotEmpty(),
                 canExportJson =
-                    jsonImport.hasTranscript &&
+                    transcriptDisplay.hasTranscript &&
                     !editing &&
                     !jsonExport.inProgress &&
                     transcriptDisplay.error == null &&
@@ -430,7 +413,7 @@ fun PlaybackScreen(
                             transcriptDisplay.error != null ->
                                 transcriptDisplay.error.orEmpty()
 
-                            jsonImport.hasTranscript ->
+                            transcriptDisplay.hasTranscript ->
                                 "В расшифровке нет реплик"
 
                             else ->
@@ -448,12 +431,12 @@ fun PlaybackScreen(
                         )
                     }
 
-                    if (!jsonImport.hasTranscript) {
+                    if (!transcriptDisplay.hasTranscript) {
                         Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = viewModel::transcribeLocally,
                             enabled = !localMl.running && !localMl.downloading &&
-                                !jsonImport.inProgress && !editing,
+                                !editing,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Расшифровать на устройстве")
@@ -484,44 +467,6 @@ fun PlaybackScreen(
                         localMl.error?.let { error ->
                             Text(error, color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    if (showDebugImport && !jsonImport.hasTranscript) {
-
-                        Spacer(Modifier.height(16.dp))
-
-                        OutlinedButton(
-                            onClick = {
-                                jsonPicker.launch(arrayOf("*/*"))
-                            },
-                            enabled = !jsonImport.inProgress
-                        ) {
-                            Text(
-                                if (jsonImport.inProgress) {
-                                    "Загрузка JSON..."
-                                } else {
-                                    "Загрузить JSON (DEBUG)"
-                                }
-                            )
-                        }
-
-                        jsonImport.message?.let { message ->
-
-                            Text(
-                                text = message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        jsonImport.error?.let { error ->
-
-                            Text(
-                                text = error,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
                         }
                     }
 

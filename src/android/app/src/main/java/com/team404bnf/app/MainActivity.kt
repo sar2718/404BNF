@@ -39,6 +39,8 @@ class MainActivity : ComponentActivity() {
 
         // База данных
         val database = AppDatabase.getInstance(applicationContext)
+        com.team404bnf.app.transcription.TranscriptionTaskManager.initDatabase(applicationContext)
+
         val repository = RecordingRepository(
             database.recordingDao(),
             applicationContext

@@ -1,7 +1,6 @@
 package com.team404bnf.app.playback
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.net.Uri
 
 import androidx.lifecycle.ViewModel
@@ -12,10 +11,8 @@ import com.team404bnf.app.data.repository.RecordingDetails
 import com.team404bnf.app.data.repository.RecordingRepository
 import com.team404bnf.app.data.repository.TranscriptRecoveryState
 import com.team404bnf.app.data.repository.TranscriptRepository
-import com.team404bnf.app.data.repository.TranscriptSaveResult
 import com.team404bnf.app.recording.RecordingSession
 import com.team404bnf.app.recording.RecordingStatus
-import com.team404bnf.app.transcription.JsonDocumentReader
 import com.team404bnf.app.transcription.TranscriptSegment
 import com.team404bnf.app.localml.LocalTranscriptionPipeline
 import com.team404bnf.ml.ModelManager
@@ -51,15 +48,9 @@ data class PlaybackScreenState(
     val error: String? = null
 )
 
-data class JsonImportState(
-    val inProgress: Boolean = false,
-    val hasTranscript: Boolean = false,
-    val message: String? = null,
-    val error: String? = null
-)
-
 data class TranscriptDisplayState(
     val loading: Boolean = false,
+    val hasTranscript: Boolean = false,
     val segments: List<TranscriptSegment> = emptyList(),
     val speakerLabels: Map<String, String> = emptyMap(),
     val originalPositions: Map<String, Int> = emptyMap(),
@@ -106,16 +97,6 @@ class PlaybackViewModel(
 ) : ViewModel() {
 
     private val appContext = context.applicationContext
-
-    private val isDebugBuild =
-        (appContext.applicationInfo.flags and
-            ApplicationInfo.FLAG_DEBUGGABLE) != 0
-
-    private val _jsonImportState = MutableStateFlow(
-        JsonImportState()
-    )
-
-    val jsonImportState = _jsonImportState.asStateFlow()
 
     private val _transcriptDisplayState = MutableStateFlow(
         TranscriptDisplayState()
@@ -190,12 +171,6 @@ class PlaybackViewModel(
                     recordingId
                 ).collect { content ->
 
-                    _jsonImportState.update {
-                        it.copy(
-                            hasTranscript = content != null
-                        )
-                    }
-
                     _transcriptDisplayState.value =
                         if (content == null) {
 
@@ -204,6 +179,7 @@ class PlaybackViewModel(
                         } else {
 
                             TranscriptDisplayState(
+                                hasTranscript = true,
                                 segments = content.transcript.segments,
                                 speakerLabels =
                                     content.transcript.speakerLabels,
@@ -289,6 +265,21 @@ class PlaybackViewModel(
                     controller.pause()
                 }
             }
+        }
+
+        // Наблюдаем за фоновыми задачами расшифровки ML
+        viewModelScope.launch {
+            com.team404bnf.app.transcription.TranscriptionTaskManager.observeTask(recordingId)
+                .collect { task ->
+                    if (task != null) {
+                        _localMlState.value = LocalMlState(
+                            running = task.isActive,
+                            stage = task.stageMessage,
+                            error = task.errorMessage,
+                            completed = task.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.COMPLETED
+                        )
+                    }
+                }
         }
     }
 
@@ -461,7 +452,7 @@ class PlaybackViewModel(
             transcript.loading ||
             transcript.error != null ||
             _editing.value ||
-            !_jsonImportState.value.hasTranscript ||
+            !_transcriptDisplayState.value.hasTranscript ||
             transcript.segments.isEmpty()
         ) {
             _txtExportState.value = TxtExportState(
@@ -787,7 +778,7 @@ class PlaybackViewModel(
 
     /** Explicit opt-in: models are never downloaded automatically. */
     fun downloadLocalModels() {
-        if (localMlJob?.isActive == true || _jsonImportState.value.hasTranscript) return
+        if (localMlJob?.isActive == true || _transcriptDisplayState.value.hasTranscript) return
         _localMlState.value = LocalMlState(downloading = true, stage = "Подготовка загрузки моделей…")
         localMlJob = viewModelScope.launch {
             try {
@@ -814,115 +805,18 @@ class PlaybackViewModel(
 
     /** Turns a stored recording into JSON v1 and persists it through Edik's repository. */
     fun transcribeLocally() {
-        if (localMlJob?.isActive == true || _jsonImportState.value.hasTranscript ||
+        if (_transcriptDisplayState.value.hasTranscript ||
             _screenState.value.loading || _screenState.value.error != null) return
         if (isMicrophoneBusy()) {
             _localMlState.value = LocalMlState(error = "Дождитесь завершения записи")
             return
         }
-        _localMlState.value = LocalMlState(running = true, stage = "Подготавливаем запись…")
-        localMlJob = viewModelScope.launch {
-            try {
-                val audio = repository.getPlayableRecording(recordingId)
-                    ?: error("Аудиозапись недоступна")
-                val json = LocalTranscriptionPipeline(appContext).transcribe(audio.file) { stage ->
-                    _localMlState.update { it.copy(stage = stage) }
-                }
-                _localMlState.update { it.copy(stage = "Сохраняем расшифровку…") }
-                // save() rejects replacing a different existing transcript and checks duration.
-                transcriptRepository.save(recordingId, json)
-                _localMlState.value = LocalMlState(
-                    stage = "Расшифровка готова", completed = true
-                )
-            } catch (e: CancellationException) {
-                _localMlState.value = LocalMlState(stage = "Обработка отменена")
-                throw e
-            } catch (e: Exception) {
-                _localMlState.value = LocalMlState(error = e.message ?: "Ошибка локальной обработки")
-            } finally {
-                localMlJob = null
-            }
-        }
+        com.team404bnf.app.transcription.TranscriptionTaskManager.enqueue(appContext, recordingId)
     }
 
     fun cancelLocalMl() {
-        if (localMlJob?.isActive != true) return
-        _localMlState.update { it.copy(stage = "Отменяем…") }
-        localMlJob?.cancel()
-    }
-
-    fun importJson(uri: Uri) {
-
-        if (
-            !isDebugBuild ||
-            _jsonImportState.value.inProgress ||
-            _screenState.value.loading ||
-            _screenState.value.error != null
-        ) {
-            return
-        }
-
-        _jsonImportState.update {
-            it.copy(
-                inProgress = true,
-                message = null,
-                error = null
-            )
-        }
-
         viewModelScope.launch {
-
-            try {
-
-                val json = withContext(Dispatchers.IO) {
-                    JsonDocumentReader.read(
-                        appContext,
-                        uri
-                    )
-                }
-
-                val result = transcriptRepository.save(
-                    recordingId = recordingId,
-                    rawJson = json
-                )
-
-                val message = when (result) {
-                    TranscriptSaveResult.SAVED ->
-                        "JSON успешно сохранён"
-
-                    TranscriptSaveResult.ALREADY_PRESENT ->
-                        "Этот JSON уже был загружен"
-                }
-
-                _jsonImportState.update {
-                    it.copy(message = message)
-                }
-
-            } catch (e: CancellationException) {
-                throw e
-
-            } catch (e: Exception) {
-
-                val message = when (e) {
-
-                    is IllegalArgumentException,
-                    is IllegalStateException ->
-                        e.message ?: "Ошибка обработки JSON"
-
-                    else ->
-                        "Не удалось прочитать или сохранить JSON"
-                }
-
-                _jsonImportState.update {
-                    it.copy(error = message)
-                }
-
-            } finally {
-
-                _jsonImportState.update {
-                    it.copy(inProgress = false)
-                }
-            }
+            com.team404bnf.app.transcription.TranscriptionTaskManager.cancel(recordingId)
         }
     }
 

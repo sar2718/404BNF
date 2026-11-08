@@ -5,14 +5,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.team404bnf.app.data.repository.RecordingRepository
-import kotlinx.coroutines.flow.map
+import com.team404bnf.app.transcription.TranscriptionTaskManager
+import com.team404bnf.app.transcription.TranscriptionTaskStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 class LibraryViewModel(
     private val repository: RecordingRepository
@@ -83,41 +85,50 @@ class LibraryViewModel(
         }
     }
 
-    val savedRecordings = repository.observeRecordings()
-        .map { recordings ->
+    val savedRecordings = combine(
+        repository.observeRecordings(),
+        TranscriptionTaskManager.tasksFlow
+    ) { recordings, tasks ->
 
-            val formatter = SimpleDateFormat(
-                "HH:mm",
-                Locale.getDefault()
-            )
+        val formatter = SimpleDateFormat(
+            "HH:mm",
+            Locale.getDefault()
+        )
 
-            recordings.map { recording ->
+        recordings.map { recording ->
+            val task = tasks[recording.id]
+            val totalSeconds = recording.durationMs / 1000
 
-                RecordingPreview(
-                    id = recording.id,
-                    title = recording.title,
-                    subtitle = if (recording.audioRelativePath != null) {
-                        val totalSeconds = recording.durationMs / 1000
-
-                        val sourceLabel = if (recording.sourceType == "IMPORT") {
-                            "Импортировано"
-                        } else {
-                            "Аудиозапись"
-                        }
-
-                        "$sourceLabel · %02d:%02d · без расшифровки".format(
-                            totalSeconds / 60,
-                            totalSeconds % 60
-                        )
-                    } else {
-                        "Тест Room · аудио отсутствует"
-                    },
-                    date = formatter.format(
-                        Date(recording.createdAtEpochMs)
-                    )
-                )
+            val sourceLabel = if (recording.sourceType == "IMPORT") {
+                "Импортировано"
+            } else {
+                "Аудиозапись"
             }
+
+            val statusText = when {
+                task?.isActive == true -> "Обработка (${task.stageMessage})"
+                task?.status == TranscriptionTaskStatus.INTERRUPTED -> "Прервано"
+                task?.status == TranscriptionTaskStatus.FAILED -> "Ошибка"
+                else -> "без расшифровки"
+            }
+
+            RecordingPreview(
+                id = recording.id,
+                title = recording.title,
+                subtitle = if (recording.audioRelativePath != null) {
+                    "$sourceLabel · %02d:%02d · $statusText".format(
+                        totalSeconds / 60,
+                        totalSeconds % 60
+                    )
+                } else {
+                    "Тест Room · аудио отсутствует"
+                },
+                date = formatter.format(
+                    Date(recording.createdAtEpochMs)
+                )
+            )
         }
+    }
 
     class Factory(
         private val repository: RecordingRepository

@@ -39,20 +39,72 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `transcription_tasks` (
+                `recordingId` TEXT NOT NULL,
+                `status` TEXT NOT NULL,
+                `stageMessage` TEXT NOT NULL DEFAULT '',
+                `errorMessage` TEXT,
+                `attemptId` INTEGER NOT NULL DEFAULT 0,
+                `createdAtEpochMs` INTEGER NOT NULL,
+                `updatedAtEpochMs` INTEGER NOT NULL,
+                PRIMARY KEY(`recordingId`)
+            )
+            """.trimIndent()
+        )
+    }
+
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE transcription_tasks RENAME TO transcription_tasks_old")
+        db.execSQL(
+            """
+            CREATE TABLE `transcription_tasks` (
+                `recordingId` TEXT NOT NULL,
+                `status` TEXT NOT NULL,
+                `stageMessage` TEXT NOT NULL DEFAULT '',
+                `errorMessage` TEXT,
+                `attemptId` TEXT NOT NULL,
+                `createdAtEpochMs` INTEGER NOT NULL,
+                `updatedAtEpochMs` INTEGER NOT NULL,
+                PRIMARY KEY(`recordingId`)
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO transcription_tasks
+            (recordingId, status, stageMessage, errorMessage, attemptId, createdAtEpochMs, updatedAtEpochMs)
+            SELECT recordingId, status, stageMessage, errorMessage,
+                   CAST(attemptId AS TEXT), createdAtEpochMs, updatedAtEpochMs
+            FROM transcription_tasks_old
+            """.trimIndent()
+        )
+        db.execSQL("DROP TABLE transcription_tasks_old")
+    }
+}
+
 @Database(
     entities = [
         RecordingEntity::class,
         SpeakerEntity::class,
         UtteranceEntity::class,
-        TranscriptSnapshotEntity::class
+        TranscriptSnapshotEntity::class,
+        TranscriptionTaskEntity::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun recordingDao(): RecordingDao
     abstract fun transcriptSnapshotDao(): TranscriptSnapshotDao
+    abstract fun transcriptionTaskDao(): TranscriptionTaskDao
 
     companion object {
 
@@ -67,7 +119,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "404bnf_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also {
                         INSTANCE = it
                     }

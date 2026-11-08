@@ -32,7 +32,7 @@ data class ImportFileLimit private constructor(val bytes: Long) {
         val GB_1 = ImportFileLimit(GB)
         val UNLIMITED = ImportFileLimit(0L)
         val presets = listOf(MB_100, MB_250, MB_500, GB_1)
-        val DEFAULT = GB_1
+        val DEFAULT = UNLIMITED
 
         fun fromStored(bytes: Long?): ImportFileLimit = when {
             bytes == 0L -> UNLIMITED

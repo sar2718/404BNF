@@ -4,6 +4,8 @@ import android.content.Context
 import com.team404bnf.app.data.db.AppDatabase
 import com.team404bnf.app.data.repository.RecordingRepository
 import com.team404bnf.app.transcription.TranscriptionTaskManager
+import com.team404bnf.app.transcription.TranscriptionTask
+import com.team404bnf.app.transcription.TranscriptionTaskStatus
 import com.team404bnf.ml.ModelCatalog
 import com.team404bnf.ml.ModelEvent
 import com.team404bnf.ml.ModelManager
@@ -11,6 +13,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
@@ -47,26 +52,41 @@ class RecognitionModels private constructor(context: Context) {
     private val preferences = appContext.getSharedPreferences("recognition_setup", Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(RecognitionModelsState())
     val state = _state.asStateFlow()
-    private val _pendingRecordingId = MutableStateFlow(preferences.getString("pending_recording", null))
-    val pendingRecordingId = _pendingRecordingId.asStateFlow()
+    val pendingRecordingId = TranscriptionTaskManager.tasksFlow.map { tasks ->
+        tasks.values.filter { it.status == TranscriptionTaskStatus.WAITING_FOR_MODELS }
+            .minByOrNull { it.createdAtEpochMs }?.recordingId
+    }.stateIn(scope, SharingStarted.Eagerly, null)
+    private var refreshJob: Job? = null
 
-    init { refresh() }
-
-    fun rememberRecording(recordingId: String) {
-        require(UUID.fromString(recordingId).toString() == recordingId)
-        preferences.edit().putString("pending_recording", recordingId).apply()
-        _pendingRecordingId.value = recordingId
+    init {
+        refresh()
+        // Migrate the earlier single pending preference into the existing durable A17 tasks.
+        preferences.getString("pending_recording", null)?.let { id ->
+            scope.launch {
+                val valid = runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false)
+                val requested = if (valid) requestTranscription(id) else false
+                // Keep the legacy request if Room could not persist its A17 replacement.
+                if (!valid || requested || TranscriptionTaskManager.getTask(id) != null) {
+                    preferences.edit().remove("pending_recording").apply()
+                }
+            }
+        }
     }
 
-    private fun clearPending(recordingId: String) {
-        if (_pendingRecordingId.value != recordingId) return
-        preferences.edit().remove("pending_recording").apply()
-        _pendingRecordingId.value = null
-    }
-
+    @Synchronized
     fun refresh() {
-        if (_state.value.phase in setOf(ModelPhase.DOWNLOADING, ModelPhase.REMOVING)) return
-        scope.launch { operations.withLock { verifyReady() } }
+        if (_state.value.phase in setOf(ModelPhase.DOWNLOADING, ModelPhase.REMOVING) || refreshJob?.isActive == true) return
+        refreshJob = scope.launch {
+            try {
+                TranscriptionTaskManager.initDatabase(appContext)
+                TranscriptionTaskManager.awaitDatabaseInitialized()
+                operations.withLock { if (verifyReady()) resumeWaiting() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _state.update { it.copy(phase = ModelPhase.MISSING, error = error.message ?: "Не удалось проверить модели") }
+            }
+        }
     }
 
     private suspend fun verifyReady(): Boolean {
@@ -74,10 +94,6 @@ class RecognitionModels private constructor(context: Context) {
         return try {
             val problems = manager.verifyInstalled(modelPackage.models)
             val bytes = manager.storageBytes(modelPackage.models)
-            // Do not keep routing to setup for an audio recording the user has since deleted.
-            _pendingRecordingId.value?.let { id ->
-                if (AppDatabase.getInstance(appContext).recordingDao().getRecordingById(id) == null) clearPending(id)
-            }
             _state.value = RecognitionModelsState(
                 phase = if (problems.isEmpty()) ModelPhase.READY else ModelPhase.MISSING,
                 storageBytes = bytes,
@@ -120,12 +136,12 @@ class RecognitionModels private constructor(context: Context) {
                         ) }
                     }
                     // Readiness is published only after the existing full integrity check succeeds.
-                    verifyReady()
+                    if (verifyReady()) resumeWaiting()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
                     val bytes = runCatching { manager.storageBytes(modelPackage.models) }.getOrDefault(_state.value.storageBytes)
-                    verifyReady()
+                    if (verifyReady()) resumeWaiting()
                     _state.update { it.copy(storageBytes = bytes, error = downloadError(error)) }
                 }
             }
@@ -142,12 +158,12 @@ class RecognitionModels private constructor(context: Context) {
                     TranscriptionTaskManager.initDatabase(appContext)
                     TranscriptionTaskManager.awaitDatabaseInitialized()
                     TranscriptionTaskManager.withModelsIdle { manager.removeManaged(modelPackage.models) }
-                    verifyReady()
+                    if (verifyReady()) resumeWaiting()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
                     // A partial deletion must never leave a stale READY state.
-                    verifyReady()
+                    if (verifyReady()) resumeWaiting()
                     val bytes = runCatching { manager.storageBytes(modelPackage.models) }.getOrDefault(oldState.storageBytes)
                     _state.update { it.copy(error = error.message ?: "Не удалось удалить модели", storageBytes = bytes) }
                 }
@@ -161,37 +177,72 @@ class RecognitionModels private constructor(context: Context) {
 
     /** Called once after audio is closed and its Room row exists, independently of Compose. */
     suspend fun requestTranscription(recordingId: String): Boolean {
-        rememberRecording(recordingId)
-        if (_state.value.phase in setOf(ModelPhase.DOWNLOADING, ModelPhase.REMOVING)) return false
-        return operations.withLock {
-            try {
-                val database = AppDatabase.getInstance(appContext)
-                val recording = RecordingRepository(database.recordingDao(), appContext).getPlayableRecording(recordingId)
-                if (recording == null) {
-                    clearPending(recordingId)
-                    error("Сохранённая аудиозапись недоступна")
-                }
-                if (database.transcriptSnapshotDao().get(recordingId) != null) {
-                    clearPending(recordingId)
-                    return@withLock true
-                }
-                TranscriptionTaskManager.initDatabase(appContext)
-                TranscriptionTaskManager.awaitDatabaseInitialized()
-                if (TranscriptionTaskManager.getTask(recordingId)?.isActive == true) {
-                    clearPending(recordingId)
-                    return@withLock true
-                }
-                if (!verifyReady()) return@withLock false
-                TranscriptionTaskManager.enqueueSavedRecording(appContext, recordingId)
-                clearPending(recordingId)
-                true
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                _state.update { it.copy(error = error.message ?: "Не удалось запустить расшифровку") }
-                false
+        return try {
+            require(UUID.fromString(recordingId).toString() == recordingId)
+            TranscriptionTaskManager.initDatabase(appContext)
+            TranscriptionTaskManager.awaitDatabaseInitialized()
+            val database = AppDatabase.getInstance(appContext)
+            if (database.transcriptSnapshotDao().get(recordingId) != null) return true
+            check(RecordingRepository(database.recordingDao(), appContext).getPlayableRecording(recordingId) != null) {
+                "Сохранённая аудиозапись недоступна"
             }
+            val waiting = TranscriptionTaskManager.waitForModels(recordingId)
+                ?: return TranscriptionTaskManager.getTask(recordingId)?.let {
+                    it.isActive || it.status == TranscriptionTaskStatus.COMPLETED
+                } == true
+            // Waiting is already durable if installation is in progress or the app is closed now.
+            if (_state.value.phase in setOf(ModelPhase.DOWNLOADING, ModelPhase.REMOVING)) return false
+            operations.withLock {
+                val latest = TranscriptionTaskManager.getTask(recordingId)
+                if (latest?.isActive == true || latest?.status == TranscriptionTaskStatus.COMPLETED) return@withLock true
+                if (latest?.status != TranscriptionTaskStatus.WAITING_FOR_MODELS || latest.attemptId != waiting.attemptId)
+                    return@withLock false
+                if (!verifyReady()) return@withLock false
+                resumeWaitingTask(waiting)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            _state.update { it.copy(error = error.message ?: "Не удалось запустить расшифровку") }
+            false
         }
+    }
+
+    /** The A17 worker holds mlMutex from this check until native sessions have closed. */
+    suspend fun verifyForProcessing(): Boolean {
+        if (_state.value.phase in setOf(ModelPhase.DOWNLOADING, ModelPhase.REMOVING)) return false
+        return operations.withLock { verifyReady() }
+    }
+
+    private suspend fun resumeWaiting() {
+        val waiting = TranscriptionTaskManager.tasksFlow.value.values
+            .filter { it.status == TranscriptionTaskStatus.WAITING_FOR_MODELS }.sortedBy { it.createdAtEpochMs }
+        waiting.forEach { resumeWaitingTask(it) }
+    }
+
+    private suspend fun resumeWaitingTask(task: TranscriptionTask): Boolean {
+        val database = AppDatabase.getInstance(appContext)
+        return try {
+            if (database.transcriptSnapshotDao().get(task.recordingId) != null) {
+                TranscriptionTaskManager.updateTask(task.recordingId, TranscriptionTaskStatus.COMPLETED,
+                    stageMessage = "Расшифровка готова", attemptId = task.attemptId)
+            } else {
+                check(RecordingRepository(database.recordingDao(), appContext).getPlayableRecording(task.recordingId) != null) {
+                    "Сохранённая аудиозапись недоступна"
+                }
+                TranscriptionTaskManager.enqueueSavedRecording(appContext, task.recordingId, task.attemptId)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            TranscriptionTaskManager.updateTask(task.recordingId, TranscriptionTaskStatus.FAILED,
+                errorMessage = error.message ?: "Не удалось запустить расшифровку", attemptId = task.attemptId)
+            false
+        }
+    }
+
+    fun cancelPendingTranscriptions(waiting: List<TranscriptionTask>) {
+        scope.launch { waiting.forEach { TranscriptionTaskManager.cancel(it.recordingId, it.attemptId) } }
     }
 
     private fun downloadError(error: Exception): String {

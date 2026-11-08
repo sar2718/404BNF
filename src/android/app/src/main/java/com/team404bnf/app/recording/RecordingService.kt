@@ -206,8 +206,10 @@ class RecordingService : Service() {
                     it.copy(
                         status = RecordingStatus.SAVED,
                         savedRecordingId = recordingId,
-                        message = if(queued) "Аудиозапись сохранена" else
-                            "Аудио сохранено. Для расшифровки подготовьте офлайн-модели."
+                        message = if(!queued && com.team404bnf.app.transcription.TranscriptionTaskManager.getTask(recordingId)?.status ==
+                            com.team404bnf.app.transcription.TranscriptionTaskStatus.WAITING_FOR_MODELS)
+                            "Аудио сохранено. ${com.team404bnf.app.transcription.TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE}."
+                        else "Аудиозапись сохранена"
                     )
                 }
 

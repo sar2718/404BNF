@@ -9,15 +9,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 
 import com.team404bnf.app.data.db.AppDatabase
 import com.team404bnf.app.data.repository.ConsentRepository
@@ -35,6 +41,11 @@ import com.team404bnf.app.ui.recorder.RecorderViewModel
 import com.team404bnf.app.ui.theme.BnfTheme
 
 class MainActivity : ComponentActivity() {
+
+    override fun onStart() {
+        super.onStart()
+        com.team404bnf.app.models.RecognitionModels.get(applicationContext).refresh()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -141,6 +152,12 @@ private fun RecognitionNavigation(
     val pendingId by models.pendingRecordingId.collectAsState()
     val savedRecordings by libraryViewModel.savedRecordings.collectAsState(initial = emptyList())
     val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val tasks by com.team404bnf.app.transcription.TranscriptionTaskManager.tasksFlow.collectAsState()
+    val waitingKey = tasks.values.filter {
+        it.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.WAITING_FOR_MODELS
+    }.sortedBy { it.recordingId }.joinToString("|") { "${it.recordingId}:${it.attemptId}:${it.updatedAtEpochMs}" }
+    var acknowledgedModelsWarning by rememberSaveable { mutableStateOf<String?>(null) }
 
     fun toLibrary() {
         if (!navController.popBackStack("library", false)) navController.navigate("library") {
@@ -170,10 +187,7 @@ private fun RecognitionNavigation(
             }
         }
         composable("models") {
-            com.team404bnf.app.models.ModelsScreen(models, onBack = ::toLibrary, onContinue = { id ->
-                models.launchTranscription(id)
-                openPlayer(id, processing = true, removeRoute = "models")
-            })
+            com.team404bnf.app.models.ModelsScreen(models, onBack = ::toLibrary)
         }
         composable("library") {
             val deleting by libraryViewModel.deleting.collectAsState()
@@ -196,9 +210,7 @@ private fun RecognitionNavigation(
         }
         composable("recorder") {
             RecorderScreen(recorderViewModel, onBack = { navController.popBackStack() }, onSaved = { id ->
-                if (models.pendingRecordingId.value == id) {
-                    navController.navigate("models") { popUpTo("recorder") { inclusive = true }; launchSingleTop = true }
-                } else openPlayer(id, processing = true, removeRoute = "recorder")
+                openPlayer(id, processing = true, removeRoute = "recorder")
             })
         }
         composable("player/{recordingId}?processing={processing}", arguments = listOf(
@@ -214,9 +226,28 @@ private fun RecognitionNavigation(
             PlaybackScreen(viewModel, onBack = ::toLibrary,
                 openProcessing = entry.arguments?.getBoolean("processing") == true,
                 onManageModels = {
-                    models.rememberRecording(recordingId)
+                    models.launchTranscription(recordingId)
                     navController.navigate("models") { launchSingleTop = true }
                 })
         }
+    }
+
+    if (waitingKey.isNotEmpty() && waitingKey != acknowledgedModelsWarning &&
+        modelState.phase == com.team404bnf.app.models.ModelPhase.MISSING && backStackEntry != null &&
+        backStackEntry?.destination?.route !in setOf("models", "startup", "recorder")) {
+        AlertDialog(
+            onDismissRequest = { acknowledgedModelsWarning = waitingKey },
+            title = { Text("Нужна модель распознавания") },
+            text = { Text("${com.team404bnf.app.transcription.TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE}.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    acknowledgedModelsWarning = waitingKey
+                    navController.navigate("models") { launchSingleTop = true }
+                }) { Text("Скачать модель") }
+            },
+            dismissButton = {
+                TextButton(onClick = { acknowledgedModelsWarning = waitingKey }) { Text("Позже") }
+            }
+        )
     }
 }

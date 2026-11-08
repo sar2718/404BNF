@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 
 object TranscriptionTaskManager {
+    const val MODELS_REQUIRED_MESSAGE = "Для расшифровки необходимо скачать модель распознавания"
     private const val TAG = "TranscriptionTaskManager"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _tasksMap = MutableStateFlow<Map<String, TranscriptionTask>>(emptyMap())
@@ -99,28 +100,35 @@ object TranscriptionTaskManager {
     fun getTask(recordingId: String): TranscriptionTask? = _tasksMap.value[recordingId]
 
     /** Await durable enqueue and FGS startup before the recording service can finish. */
-    suspend fun enqueueSavedRecording(context: Context, recordingId: String) {
+    suspend fun enqueueSavedRecording(context: Context, recordingId: String, waitingAttemptId: String? = null): Boolean {
         initDatabase(context)
         awaitDatabaseInitialized()
-        val task = enqueueTask(recordingId) ?: return
+        val task = enqueueTask(recordingId, waitingAttemptId) ?: return false
         try {
             startService(context, task.recordingId)
+            return true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             updateTask(recordingId, TranscriptionTaskStatus.FAILED,
                 errorMessage = "Не удалось запустить обработку: ${e.message}", attemptId = task.attemptId)
+            return false
         }
     }
 
     /** Serialize destructive model operations with both enqueue and native ML lifetime. */
     suspend fun <T> withModelsIdle(action: suspend () -> T): T {
-        check(!hasActiveOrQueuedTasks()) { "Модели используются: дождитесь завершения обработки" }
+        check(_tasksMap.value.values.none { it.isProcessing }) { "Модели используются: дождитесь завершения обработки" }
         check(mlMutex.tryLock()) { "Модели ещё используются обработкой" }
         try {
             return transitionMutex.withLock {
-                check(!hasActiveOrQueuedTasks() && activeJobs.isEmpty()) {
+                check(_tasksMap.value.values.none { it.isProcessing } && activeJobs.isEmpty()) {
                     "Модели используются: дождитесь завершения обработки"
+                }
+                // Waiting tasks stay in A17/Room, but cannot reach native ML during model removal.
+                _tasksMap.value.values.filter { it.status == TranscriptionTaskStatus.QUEUED }.forEach {
+                    persistTask(it.copy(status = TranscriptionTaskStatus.WAITING_FOR_MODELS,
+                        stageMessage = MODELS_REQUIRED_MESSAGE, updatedAtEpochMs = System.currentTimeMillis()))
                 }
                 action()
             }
@@ -129,32 +137,51 @@ object TranscriptionTaskManager {
         }
     }
 
-    internal suspend fun enqueueForTest(recordingId: String): TranscriptionTask? =
-        enqueueTask(recordingId)
+    internal suspend fun enqueueForTest(recordingId: String, waitingAttemptId: String? = null): TranscriptionTask? =
+        enqueueTask(recordingId, waitingAttemptId)
 
-    private suspend fun enqueueTask(recordingId: String): TranscriptionTask? {
+    /** Persist the request before checking/downloading models. Repeated requests keep the same attempt. */
+    suspend fun waitForModels(recordingId: String): TranscriptionTask? = transitionMutex.withLock {
+        val existing = _tasksMap.value[recordingId]
+        if (existing?.isActive == true || existing?.status == TranscriptionTaskStatus.COMPLETED) return@withLock null
+        if (existing?.status == TranscriptionTaskStatus.WAITING_FOR_MODELS) return@withLock existing
+        val waiting = TranscriptionTask(recordingId, TranscriptionTaskStatus.WAITING_FOR_MODELS,
+            stageMessage = MODELS_REQUIRED_MESSAGE)
+        persistTask(waiting)
+        waiting
+    }
+
+    // Called only while holding transitionMutex; Room is written before publishing observable state.
+    private suspend fun persistTask(task: TranscriptionTask) {
+        dao?.upsertTask(task.toEntity())
+        localUpdateTimes[task.recordingId] = task.updatedAtEpochMs
+        _tasksMap.update { it + (task.recordingId to task) }
+    }
+
+    private suspend fun enqueueTask(recordingId: String, waitingAttemptId: String? = null): TranscriptionTask? {
         return transitionMutex.withLock {
             val existing = _tasksMap.value[recordingId]
-            if (existing?.isActive == true) return@withLock null
+            if (existing?.isActive == true || existing?.status == TranscriptionTaskStatus.COMPLETED) return@withLock null
+            if (waitingAttemptId != null && (existing?.status != TranscriptionTaskStatus.WAITING_FOR_MODELS ||
+                    existing.attemptId != waitingAttemptId)) return@withLock null
+            if (waitingAttemptId == null && existing?.status == TranscriptionTaskStatus.WAITING_FOR_MODELS) return@withLock null
             val now = System.currentTimeMillis()
             val queued = TranscriptionTask(
                 recordingId = recordingId,
                 status = TranscriptionTaskStatus.QUEUED,
                 stageMessage = "В очереди…",
-                attemptId = UUID.randomUUID().toString(),
-                createdAtEpochMs = now,
+                attemptId = if (waitingAttemptId != null) waitingAttemptId else UUID.randomUUID().toString(),
+                createdAtEpochMs = if (waitingAttemptId != null) existing!!.createdAtEpochMs else now,
                 updatedAtEpochMs = now
             )
-            dao?.upsertTask(queued.toEntity())
-            localUpdateTimes[recordingId] = queued.updatedAtEpochMs
-            _tasksMap.update { it + (recordingId to queued) }
+            persistTask(queued)
             queued
         }
     }
 
-    suspend fun cancel(recordingId: String) {
+    suspend fun cancel(recordingId: String, attemptId: String? = null) {
         operationLock(recordingId).withLock {
-            terminate(recordingId, TranscriptionTaskStatus.CANCELLED, "Обработка отменена", null)
+            terminate(recordingId, TranscriptionTaskStatus.CANCELLED, "Обработка отменена", null, attemptId)
         }
     }
 
@@ -171,10 +198,12 @@ object TranscriptionTaskManager {
         recordingId: String,
         status: TranscriptionTaskStatus,
         stageMessage: String,
-        errorMessage: String?
+        errorMessage: String?,
+        attemptId: String? = null
     ) {
         transitionMutex.withLock {
             val current = _tasksMap.value[recordingId] ?: return
+            if (attemptId != null && current.attemptId != attemptId) return
             if (current.isFinished) return
             val terminal = current.copy(
                 status = status,
@@ -206,6 +235,7 @@ object TranscriptionTaskManager {
         attemptId: String? = null
     ): Boolean = transitionMutex.withLock {
         val current = _tasksMap.value[recordingId]
+        if (attemptId != null && current == null) return@withLock false
         if (current != null) {
             if (attemptId != null && attemptId != current.attemptId) return@withLock false
             if (current.isFinished) return@withLock false
@@ -298,8 +328,12 @@ object TranscriptionTaskManager {
     private fun isAllowed(from: TranscriptionTaskStatus, to: TranscriptionTaskStatus): Boolean {
         if (from == to) return true
         return when (from) {
+            TranscriptionTaskStatus.WAITING_FOR_MODELS -> to in setOf(
+                TranscriptionTaskStatus.QUEUED, TranscriptionTaskStatus.COMPLETED, TranscriptionTaskStatus.FAILED)
             TranscriptionTaskStatus.QUEUED -> to == TranscriptionTaskStatus.PREPARING
                 || to == TranscriptionTaskStatus.FAILED
+                || to == TranscriptionTaskStatus.WAITING_FOR_MODELS
+                || to == TranscriptionTaskStatus.COMPLETED
             TranscriptionTaskStatus.PREPARING -> to in setOf(
                 TranscriptionTaskStatus.RUNNING_ASR, TranscriptionTaskStatus.RUNNING_DIARIZATION,
                 TranscriptionTaskStatus.SAVING, TranscriptionTaskStatus.FAILED

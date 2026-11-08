@@ -4,6 +4,7 @@ import com.team404bnf.app.data.db.TranscriptionTaskEntity
 import java.util.UUID
 
 enum class TranscriptionTaskStatus {
+    WAITING_FOR_MODELS,
     QUEUED,
     PREPARING,
     RUNNING_ASR,
@@ -24,6 +25,9 @@ data class TranscriptionTask(
     val createdAtEpochMs: Long = System.currentTimeMillis(),
     val updatedAtEpochMs: Long = System.currentTimeMillis()
 ) {
+    val isProcessing: Boolean
+        get() = isActive && status != TranscriptionTaskStatus.QUEUED
+
     val isActive: Boolean
         get() = status in setOf(
             TranscriptionTaskStatus.QUEUED,

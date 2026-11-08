@@ -56,6 +56,7 @@ class TranscriptionService : Service() {
     }
 
     private var workerJob: Job? = null
+    private var lastStartId: Int = 0
     @Volatile private var activeTaskId: String? = null
 
     override fun onCreate() {
@@ -66,7 +67,9 @@ class TranscriptionService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @Synchronized
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             ACTION_CANCEL -> {
                 val id = intent.getStringExtra(EXTRA_RECORDING_ID)
@@ -129,6 +132,7 @@ class TranscriptionService : Service() {
         }
     }
 
+    @Synchronized
     private fun triggerWorkerLoop() {
         if (timedOut || workerJob?.isActive == true) return
         workerJob = scope.launch {
@@ -152,9 +156,13 @@ class TranscriptionService : Service() {
                 }
             } finally {
                 if (!timedOut) {
-                    activeTaskId = null
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
+                    synchronized(this@TranscriptionService) {
+                        activeTaskId = null
+                        workerJob = null
+                        // A resumed/new task may arrive while the previous loop is finishing.
+                        if (TranscriptionTaskManager.getNextQueuedTask() != null) triggerWorkerLoop()
+                        else if (stopSelfResult(lastStartId)) stopForeground(STOP_FOREGROUND_REMOVE)
+                    }
                 }
             }
         }
@@ -163,14 +171,26 @@ class TranscriptionService : Service() {
     private suspend fun processSingleTask(recordingId: String) {
         TranscriptionTaskManager.mlMutex.withLock {
             val currentTask = TranscriptionTaskManager.getTask(recordingId)
-            if (currentTask == null || currentTask.status == TranscriptionTaskStatus.CANCELLED) return
+            if (currentTask == null || currentTask.status != TranscriptionTaskStatus.QUEUED) return
 
             activeTaskId = recordingId
             val currentJob = scope.launch(start = CoroutineStart.LAZY) {
                 try {
+                    // A persisted result (including user edits) always wins over a stale queued task.
+                    if (AppDatabase.getInstance(applicationContext).transcriptSnapshotDao().get(recordingId) != null) {
+                        TranscriptionTaskManager.updateTask(recordingId, TranscriptionTaskStatus.COMPLETED,
+                            stageMessage = "Расшифровка готова", attemptId = currentTask.attemptId)
+                        return@launch
+                    }
                     val recording = recordingRepository.getPlayableRecording(recordingId)
                         ?: error("Аудиозапись недоступна")
 
+                    // Revalidate at execution time, under the same lock that protects model removal.
+                    if (!com.team404bnf.app.models.RecognitionModels.get(applicationContext).verifyForProcessing()) {
+                        TranscriptionTaskManager.updateTask(recordingId, TranscriptionTaskStatus.WAITING_FOR_MODELS,
+                            stageMessage = TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE, attemptId = currentTask.attemptId)
+                        return@launch
+                    }
                     val preparing = TranscriptionTaskManager.updateTask(
                         recordingId = recordingId,
                         status = TranscriptionTaskStatus.PREPARING,

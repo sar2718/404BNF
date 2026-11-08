@@ -14,11 +14,13 @@ import com.team404bnf.app.ui.components.*
 import com.team404bnf.app.ui.theme.*
 
 @Composable
-fun ModelsScreen(models: RecognitionModels, onBack: () -> Unit, onContinue: (String) -> Unit) {
+fun ModelsScreen(models: RecognitionModels, onBack: () -> Unit) {
     val state by models.state.collectAsState()
     val pendingId by models.pendingRecordingId.collectAsState()
     val tasks by TranscriptionTaskManager.tasksFlow.collectAsState()
-    val active = tasks.values.any { it.isActive }
+    val active = tasks.values.any { it.isProcessing }
+    val waiting = tasks.values.filter { it.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.WAITING_FOR_MODELS }
+    LaunchedEffect(models) { models.refresh() }
     var confirmDelete by remember { mutableStateOf(false) }
     val pack = models.modelPackage
     BackHandler { onBack() }
@@ -41,12 +43,13 @@ fun ModelsScreen(models: RecognitionModels, onBack: () -> Unit, onContinue: (Str
                         state.phase == ModelPhase.CHECKING -> "Проверка моделей…"
                         state.phase == ModelPhase.REMOVING -> "Удаление моделей…"
                         state.error != null -> "Повторить загрузку"
-                        else -> "Скачать"
+                        else -> "Скачать модель"
                     }, models::download, Modifier.fillMaxWidth(), accent = true,
                     enabled = !state.busy && !active)
-                if (state.ready && pendingId != null) ArchiveButton("Продолжить расшифровку", {
-                    pendingId?.let(onContinue)
-                }, Modifier.fillMaxWidth(), accent = true)
+                if (waiting.isNotEmpty()) TextButton(onClick = { models.cancelPendingTranscriptions(waiting) },
+                    modifier = Modifier.fillMaxWidth()) {
+                    Text(if (waiting.size > 1) "Отменить все ожидающие расшифровки" else "Отменить ожидание расшифровки")
+                }
                 ArchiveButton("К записям", onBack, Modifier.fillMaxWidth())
             }
         }
@@ -63,7 +66,9 @@ fun ModelsScreen(models: RecognitionModels, onBack: () -> Unit, onContinue: (Str
                 Spacer(Modifier.height(8.dp))
                 Text(if (state.ready) "Офлайн-распознавание готово" else "Подготовка офлайн-распознавания",
                     style = MaterialTheme.typography.headlineMedium)
-                if (pendingId != null) Text("Аудиозапись сохранена. После подготовки моделей можно продолжить её расшифровку.",
+                if (pendingId != null) Text(
+                    if (state.ready) "Модели готовы. Запускаем ожидающие расшифровки…" else
+                        "${TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE}. Аудиозаписи сохранены. После загрузки обработка продолжится автоматически.",
                     modifier = Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium,
                     color = ArchiveColors.Muted)
                 Spacer(Modifier.height(24.dp))

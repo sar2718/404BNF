@@ -29,4 +29,9 @@ class LibraryStatusTest {
         assertEquals("Прервано",recordingStatusLabel(false,TranscriptionTaskStatus.CANCELLED))
         assertEquals("Только аудио",recordingStatusLabel(false,null))
     }
+    @Test fun waitingForModelsIsVisibleAndCannotHideAnExistingTranscript() {
+        assertEquals("Ожидает установки модели",recordingStatusLabel(false,TranscriptionTaskStatus.WAITING_FOR_MODELS))
+        assertEquals("Расшифровка готова",recordingStatusLabel(true,TranscriptionTaskStatus.WAITING_FOR_MODELS))
+        assertEquals("Расшифровка готова",recordingStatusLabel(true,TranscriptionTaskStatus.QUEUED))
+    }
 }

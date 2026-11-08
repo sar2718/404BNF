@@ -69,10 +69,10 @@ class ImportStreamLimitTest {
         }
     }
 
-    @Test fun `unlimited stream can exceed the former one GiB cap`() = runBlocking {
+    @Test fun `default limit allows a stream larger than the former one GiB cap`() = runBlocking {
         val size = ImportFileLimit.GB_1.bytes + 1
         val output = Counter()
-        assertEquals(size, copyImportStream(UnknownSizeStream(size), output, ImportFileLimit.UNLIMITED))
+        assertEquals(size, copyImportStream(UnknownSizeStream(size), output, ImportFileLimit.DEFAULT))
         assertEquals(size, output.bytes)
     }
 }

@@ -41,7 +41,7 @@ internal fun ProcessingScreen(title: String, durationMs: Long, task: Transcripti
                 horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 if(failed && !hasTranscript) ArchiveButton("Повторить",onRetry,
                     Modifier.weight(1f),enabled=retryEnabled)
-                if(modelsRequired) ArchiveButton("Модели распознавания",onManageModels,Modifier.weight(1f),accent=true)
+                if(modelsRequired) ArchiveButton("Скачать модель",onManageModels,Modifier.weight(1f),accent=true)
                 ArchiveButton(if(hasTranscript) "Открыть расшифровку" else "Вернуться к записи",
                     onBack,Modifier.weight(1f))
             }
@@ -53,12 +53,13 @@ internal fun ProcessingScreen(title: String, durationMs: Long, task: Transcripti
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     ArchiveIconButton(ArchiveSymbol.Back,"К записям",onLibrary)
                     Text("Обработка",Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
-                    if(task?.isActive==true) TextButton(onClick=onCancel) {Text("Отменить")}
+                    if(task?.isActive==true || task?.status==TranscriptionTaskStatus.WAITING_FOR_MODELS)
+                        TextButton(onClick=onCancel) {Text("Отменить")}
                 }
                 Spacer(Modifier.height(if(compact) 12.dp else 24.dp));ArchiveEyebrow("404BNF / АУДИОАРХИВ")
                 Spacer(Modifier.height(6.dp));Text(when {
                     hasTranscript -> "Расшифровка готова"
-                    task?.status==TranscriptionTaskStatus.FAILED || (task==null && startError!=null) -> "Ошибка обработки"
+                    task?.status==TranscriptionTaskStatus.FAILED || (task==null && startError!=null && !modelsRequired) -> "Ошибка обработки"
                     task?.status==TranscriptionTaskStatus.INTERRUPTED -> "Обработка прервана"
                     task?.status==TranscriptionTaskStatus.CANCELLED -> "Обработка отменена"
                     else -> "Обработка записи"
@@ -76,6 +77,7 @@ internal fun ProcessingScreen(title: String, durationMs: Long, task: Transcripti
                 if(task?.isActive==true) LinearProgressIndicator(Modifier.fillMaxWidth(),color=ArchiveColors.Gold,trackColor=ArchiveColors.Divider)
                 Spacer(Modifier.height(8.dp))
                 Text(when(task?.status) {
+                    TranscriptionTaskStatus.WAITING_FOR_MODELS -> "${com.team404bnf.app.transcription.TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE}."
                     TranscriptionTaskStatus.QUEUED -> "В очереди"
                     TranscriptionTaskStatus.PREPARING -> "Подготовка аудио и моделей…"
                     TranscriptionTaskStatus.COMPLETED -> if(hasTranscript) "Расшифровка сохранена" else "Открываем сохранённую расшифровку…"
@@ -83,7 +85,7 @@ internal fun ProcessingScreen(title: String, durationMs: Long, task: Transcripti
                     TranscriptionTaskStatus.CANCELLED -> "Обработка отменена"
                     TranscriptionTaskStatus.INTERRUPTED -> "Обработка прервана"
                     null -> when {
-                        modelsRequired -> "Для расшифровки необходимо скачать офлайн-модели."
+                        modelsRequired -> "${com.team404bnf.app.transcription.TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE}."
                         startError!=null -> "Не удалось запустить обработку"
                         else -> "Подготовка запуска обработки…"
                     }

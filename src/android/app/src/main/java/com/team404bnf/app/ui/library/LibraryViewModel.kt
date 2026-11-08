@@ -145,10 +145,11 @@ class LibraryViewModel(
 }
 
 internal fun recordingStatusLabel(hasTranscript: Boolean, status: TranscriptionTaskStatus?): String = when {
+    hasTranscript -> "Расшифровка готова"
+    status == TranscriptionTaskStatus.WAITING_FOR_MODELS -> "Ожидает установки модели"
     status == TranscriptionTaskStatus.QUEUED -> "В очереди"
     status in setOf(TranscriptionTaskStatus.PREPARING, TranscriptionTaskStatus.RUNNING_ASR,
         TranscriptionTaskStatus.RUNNING_DIARIZATION, TranscriptionTaskStatus.SAVING) -> "Обработка"
-    hasTranscript -> "Расшифровка готова"
     status == TranscriptionTaskStatus.FAILED -> "Ошибка обработки"
     status == TranscriptionTaskStatus.INTERRUPTED -> "Прервано"
     status == TranscriptionTaskStatus.CANCELLED -> "Прервано"

@@ -12,12 +12,12 @@ import java.io.File
 import java.nio.file.Files
 
 class ImportSettingsTest {
-    @Test fun `existing default is one GiB and invalid stored limits fall back to it`() {
-        assertEquals(1024L * 1024 * 1024, ImportFileLimit.DEFAULT.bytes)
-        assertEquals(ImportFileLimit.GB_1, ImportFileLimit.fromStored(null))
-        assertEquals(ImportFileLimit.GB_1, ImportFileLimit.fromStored(-1L))
-        assertEquals(ImportFileLimit.GB_1, ImportFileLimit.fromStored(Long.MAX_VALUE))
-        assertEquals(ImportFileLimit.GB_1, ImportFileLimit.fromStored(1L))
+    @Test fun `default is unlimited and unset or invalid preferences do not impose a size cap`() {
+        assertTrue(ImportFileLimit.DEFAULT.isUnlimited)
+        assertEquals(ImportFileLimit.UNLIMITED, ImportFileLimit.fromStored(null))
+        assertEquals(ImportFileLimit.UNLIMITED, ImportFileLimit.fromStored(-1L))
+        assertEquals(ImportFileLimit.UNLIMITED, ImportFileLimit.fromStored(Long.MAX_VALUE))
+        assertEquals(ImportFileLimit.UNLIMITED, ImportFileLimit.fromStored(1L))
     }
 
     @Test fun `manual limits and unlimited have stable stored values and readable labels`() {
@@ -56,7 +56,7 @@ class ImportSettingsTest {
                 val firstStore = PreferenceDataStoreFactory.create(scope = scope1, produceFile = { file })
                 firstStore.edit { it[version] = "1.0"; it[acceptedAt] = 42L }
                 val first = ImportSettings(firstStore)
-                assertEquals(ImportFileLimit.GB_1, first.currentLimit())
+                assertEquals(ImportFileLimit.UNLIMITED, first.currentLimit())
                 for (option in ImportFileLimit.presets + listOf(custom, ImportFileLimit.UNLIMITED)) {
                     first.setLimit(option)
                     assertEquals(option, first.currentLimit())

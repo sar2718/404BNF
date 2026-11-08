@@ -95,6 +95,8 @@ class RecordingRepository(
             throw error
         }
 
+        // Schedule only after the validated file and its Room row exist. ML failures keep the audio.
+        com.team404bnf.app.models.RecognitionModels.get(context).launchTranscription(id)
         id
     }
 

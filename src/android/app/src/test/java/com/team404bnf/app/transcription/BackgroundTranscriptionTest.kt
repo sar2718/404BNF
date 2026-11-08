@@ -18,25 +18,83 @@ import java.util.UUID
 class BackgroundTranscriptionTest {
 
     private suspend fun finishEarlierTestTasks() {
-        TranscriptionTaskManager.tasksFlow.value.values.filter { it.isActive }.forEach {
+        TranscriptionTaskManager.tasksFlow.value.values.filter { !it.isFinished }.forEach {
             TranscriptionTaskManager.cancel(it.recordingId)
         }
     }
 
     @Test
-    fun `queued transcription prevents model deletion`() = runBlocking {
+    fun `model deletion parks queued transcription without starting native ML`() = runBlocking {
         finishEarlierTestTasks()
         val id = UUID.randomUUID().toString()
         TranscriptionTaskManager.enqueueForTest(id)
-        var deleted = false
         try {
-            TranscriptionTaskManager.withModelsIdle { deleted = true }
-            org.junit.Assert.fail("Queued tasks must protect their model files")
-        } catch (_: IllegalStateException) {
-            assertFalse(deleted)
+            TranscriptionTaskManager.withModelsIdle {
+                assertEquals(TranscriptionTaskStatus.WAITING_FOR_MODELS, TranscriptionTaskManager.getTask(id)?.status)
+                assertFalse(TranscriptionTaskManager.getTask(id)!!.isActive)
+                assertEquals(null, TranscriptionTaskManager.getNextQueuedTask())
+            }
+            assertEquals(TranscriptionTaskStatus.WAITING_FOR_MODELS, TranscriptionTaskManager.getTask(id)?.status)
         } finally {
             TranscriptionTaskManager.cancel(id)
         }
+    }
+
+    @Test fun `missing models persist one waiting request and loading resumes it only once`() = runBlocking {
+        val id = UUID.randomUUID().toString()
+        val waiting = TranscriptionTaskManager.waitForModels(id)!!
+        val duplicate = TranscriptionTaskManager.waitForModels(id)!!
+        assertEquals(waiting.attemptId, duplicate.attemptId)
+        val restored = TranscriptionTask.fromEntity(waiting.toEntity())
+        assertEquals(waiting, restored)
+        assertFalse(restored.isActive)
+        assertFalse(restored.isFinished)
+        assertEquals(null, TranscriptionTaskManager.enqueueForTest(id))
+        val resumed = TranscriptionTaskManager.enqueueForTest(id, restored.attemptId)!!
+        assertEquals(TranscriptionTaskStatus.QUEUED, resumed.status)
+        assertEquals(restored.attemptId, resumed.attemptId)
+        assertEquals(null, TranscriptionTaskManager.enqueueForTest(id, restored.attemptId))
+        TranscriptionTaskManager.cancel(id)
+    }
+
+    @Test fun `cancelled or deleted waiting task is never revived after model download`() = runBlocking {
+        for (deleted in listOf(false, true)) {
+            val id = UUID.randomUUID().toString()
+            val waiting = TranscriptionTaskManager.waitForModels(id)!!
+            if (deleted) TranscriptionTaskManager.deleteIfInactive(id) {} else TranscriptionTaskManager.cancel(id)
+            assertEquals(null, TranscriptionTaskManager.enqueueForTest(id, waiting.attemptId))
+            assertFalse(TranscriptionTaskManager.updateTask(id, TranscriptionTaskStatus.QUEUED, attemptId = waiting.attemptId))
+            assertEquals(if (deleted) null else TranscriptionTaskStatus.CANCELLED, TranscriptionTaskManager.getTask(id)?.status)
+        }
+    }
+
+    @Test fun `completed task cannot be enqueued again and stale cancellation cannot cancel a retry`() = runBlocking {
+        val completed = UUID.randomUUID().toString()
+        TranscriptionTaskManager.updateTask(completed, TranscriptionTaskStatus.COMPLETED)
+        assertEquals(null, TranscriptionTaskManager.waitForModels(completed))
+        assertEquals(null, TranscriptionTaskManager.enqueueForTest(completed))
+        val retry = UUID.randomUUID().toString()
+        val old = TranscriptionTaskManager.waitForModels(retry)!!
+        TranscriptionTaskManager.cancel(retry)
+        val fresh = TranscriptionTaskManager.waitForModels(retry)!!
+        assertFalse(old.attemptId == fresh.attemptId)
+        TranscriptionTaskManager.cancel(retry, old.attemptId)
+        assertEquals(TranscriptionTaskStatus.WAITING_FOR_MODELS, TranscriptionTaskManager.getTask(retry)?.status)
+        assertEquals(null, TranscriptionTaskManager.enqueueForTest(retry, old.attemptId))
+        TranscriptionTaskManager.cancel(retry)
+    }
+
+    @Test fun `multiple recordings wait independently and a missing model at execution returns the task to waiting`() = runBlocking {
+        val ids = listOf(UUID.randomUUID().toString(), UUID.randomUUID().toString())
+        val waiting = ids.map { TranscriptionTaskManager.waitForModels(it)!! }
+        TranscriptionTaskManager.cancel(ids[0])
+        assertEquals(null, TranscriptionTaskManager.enqueueForTest(ids[0], waiting[0].attemptId))
+        val queued = TranscriptionTaskManager.enqueueForTest(ids[1], waiting[1].attemptId)!!
+        assertTrue(TranscriptionTaskManager.updateTask(ids[1], TranscriptionTaskStatus.WAITING_FOR_MODELS,
+            stageMessage = TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE, attemptId = queued.attemptId))
+        assertEquals(TranscriptionTaskStatus.WAITING_FOR_MODELS, TranscriptionTaskManager.getTask(ids[1])?.status)
+        assertFalse(TranscriptionTaskManager.getTask(ids[1])!!.isActive)
+        TranscriptionTaskManager.cancel(ids[1])
     }
 
     @Test

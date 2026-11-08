@@ -299,7 +299,7 @@ fun PlaybackScreen(
             onBack={processingOpen=false},
             onRetry={if(models.ready) viewModel.retryTranscription() else onManageModels()},
             onLibrary=onBack,onCancel=viewModel::cancelLocalMl,
-            modelsRequired=task==null && !models.ready && !models.busy,
+            modelsRequired=(task==null || task?.status==com.team404bnf.app.transcription.TranscriptionTaskStatus.WAITING_FOR_MODELS) && !models.ready,
             onManageModels=onManageModels,startError=models.error)
         return
     }
@@ -467,9 +467,9 @@ fun PlaybackScreen(
                                         models.busy -> Text(models.stage ?: "Подготовка офлайн-моделей…",
                                             style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
                                         !models.ready -> {
-                                            Text("Для расшифровки нужен комплект офлайн-моделей.",
+                                            Text("${com.team404bnf.app.transcription.TranscriptionTaskManager.MODELS_REQUIRED_MESSAGE}.",
                                                 style=MaterialTheme.typography.bodyMedium,color=ArchiveColors.Muted)
-                                            ArchiveButton("Модели распознавания",onManageModels,
+                                            ArchiveButton("Скачать модель",onManageModels,
                                                 Modifier.fillMaxWidth(),accent=true,enabled=!recordingActive && !editing)
                                         }
                                         task?.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.COMPLETED ->

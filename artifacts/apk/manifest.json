@@ -1,0 +1,14 @@
+{
+  "file": "404BNF-1.0-debug.apk",
+  "variant": "debug",
+  "applicationId": "com.team404bnf.app",
+  "versionName": "1.0",
+  "versionCode": 1,
+  "minSdk": 26,
+  "targetSdk": 37,
+  "sourceCommit": "a8d21abad0877368e6bf59f15ea968938f978a55",
+  "sizeBytes": 157938508,
+  "sha256": "15d3f10c12ebc2bbab80f148920e46a55940c50e3400776caeb18e2359bafaf5",
+  "modelsBundled": false,
+  "deviceValidation": false
+}

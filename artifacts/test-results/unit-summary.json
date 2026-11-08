@@ -1,0 +1,155 @@
+{
+  "date": "2026-11-08",
+  "sourceCommit": "a8d21abad0877368e6bf59f15ea968938f978a55",
+  "command": "JAVA_HOME=/opt/android-studio/jbr ./gradlew :app:testDebugUnitTest :ml:testDebugUnitTest :app:assembleDebug",
+  "modules": [
+    {
+      "module": "app",
+      "suites": [
+        {
+          "name": "com.team404bnf.app.data.db.DatabaseMigrationTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.data.repository.ImportSettingsTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.data.repository.ImportStreamLimitTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.localml.LocalTranscriptJsonTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.playback.Mp3FileExporterTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.playback.SegmentPlaybackRangeTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.transcription.BackgroundTranscriptionTest",
+          "tests": 27,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.transcription.TranscriptEditingWorkflowTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.transcription.TranscriptJsonExporterTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.transcription.TranscriptJsonParserTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.transcription.TranscriptTxtFormatterTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.transcription.TranscriptUserEditsTest",
+          "tests": 27,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.ui.library.LibraryStatusTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.app.ui.playback.TranscriptGroupingTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "totals": {
+        "tests": 140,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "module": "ml",
+      "suites": [
+        {
+          "name": "com.team404bnf.ml.ManagedModelFilesTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.ml.ModelCatalogTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.ml.asr.GigaamM2Test",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.team404bnf.ml.diar.DiarizationM3Test",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "totals": {
+        "tests": 23,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  ]
+}

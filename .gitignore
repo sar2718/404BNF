@@ -24,3 +24,33 @@ google-services.json
 .env
 .env.*
 !.env.example
+
+# Generated files at any module depth
+**/build/
+.kotlin/
+.externalNativeBuild/
+.cxx/
+*.py[cod]
+.pytest_cache/
+
+# Downloaded ML weights and partial downloads
+*.onnx
+*.gguf
+*.tflite
+*.pt
+*.pth
+*.part
+
+# Local recordings and exports
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
+*.amr
+*.3gp
+
+# Local distribution copy; publish as a Release asset or opt into Git LFS
+/artifacts/apk/*.apk

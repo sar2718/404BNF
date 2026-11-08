@@ -4,8 +4,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,24 +20,44 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 import com.team404bnf.app.playback.PlaybackViewModel
+import com.team404bnf.app.ui.components.*
+import com.team404bnf.app.ui.theme.*
 import com.team404bnf.app.recording.RecordingSession
 import com.team404bnf.app.recording.RecordingStatus
-import kotlinx.coroutines.launch
+
+private enum class TranscriptExportFormat { TXT, JSON }
 
 @Composable
 fun PlaybackScreen(
     viewModel: PlaybackViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onManageModels: () -> Unit,
+    openProcessing: Boolean = false
 ) {
     val screen by viewModel.screenState.collectAsState()
+    val task by viewModel.transcriptionTask.collectAsState()
+    var processingOpen by rememberSaveable { mutableStateOf(openProcessing) }
+    var editSegmentId by rememberSaveable { mutableStateOf<String?>(null) }
     val playback by viewModel.playbackState.collectAsState()
     val recording by RecordingSession.state.collectAsState()
 
-    val localMl by viewModel.localMlState.collectAsState()
+    val models by viewModel.modelState.collectAsState()
     val transcriptDisplay by viewModel.transcriptDisplayState.collectAsState()
+
+    LaunchedEffect(task?.status, transcriptDisplay.hasTranscript) {
+        if (task?.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.COMPLETED &&
+            transcriptDisplay.hasTranscript) processingOpen = false
+    }
 
     val editing by viewModel.editing.collectAsState()
     val editError by viewModel.editError.collectAsState()
+    val savedSegmentId by viewModel.savedSegmentId.collectAsState()
+    LaunchedEffect(savedSegmentId) {
+        if(savedSegmentId != null) {
+            if(savedSegmentId == editSegmentId) editSegmentId = null
+            viewModel.consumeSegmentSaveResult()
+        }
+    }
 
     val renaming by viewModel.renaming.collectAsState()
     val renameError by viewModel.renameError.collectAsState()
@@ -51,6 +74,9 @@ fun PlaybackScreen(
     var resetDialogOpen by remember {
         mutableStateOf(false)
     }
+    LaunchedEffect(recovery.hasUserEdits) {
+        if(!recovery.hasUserEdits) resetDialogOpen = false
+    }
 
     val context = LocalContext.current
 
@@ -63,11 +89,14 @@ fun PlaybackScreen(
 
     val jsonExport by viewModel.jsonExportState.collectAsState()
 
-    var jsonVersionDialogOpen by remember {
-        mutableStateOf(false)
+    var versionDialogFormat by rememberSaveable {
+        mutableStateOf<TranscriptExportFormat?>(null)
+    }
+    var selectedTxtExportVersion by rememberSaveable {
+        mutableStateOf(com.team404bnf.app.transcription.ExportVersion.CORRECTED)
     }
 
-    var selectedJsonExportVersion by remember {
+    var selectedJsonExportVersion by rememberSaveable {
         mutableStateOf(com.team404bnf.app.transcription.ExportVersion.CORRECTED)
     }
 
@@ -81,10 +110,16 @@ fun PlaybackScreen(
             if (uri != null) {
                 viewModel.exportTranscriptTxt(
                     uri = uri,
-                    resolver = context.contentResolver
+                    resolver = context.contentResolver,
+                    version = selectedTxtExportVersion
                 )
             }
         }
+
+    fun launchTxtExportPicker(version: com.team404bnf.app.transcription.ExportVersion) {
+        selectedTxtExportVersion = version
+        txtExportLauncher.launch(suggestTxtFileName(screen.title, version))
+    }
 
     val wavExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument(
@@ -166,28 +201,18 @@ fun PlaybackScreen(
         }
     }
 
-    var dragging by remember {
-        mutableStateOf(false)
+    val durationMs = maxOf(screen.durationMs, playback.durationMs)
+    val speakerIds = remember(transcriptDisplay.segments) {
+        transcriptDisplay.segments.mapNotNull { it.speakerId }.distinct()
     }
-
-    var dragPosition by remember {
-        mutableFloatStateOf(0f)
+    val availableSpeakerLabels = remember(transcriptDisplay.speakerLabels, transcriptDisplay.segments) {
+        linkedMapOf<String,String>().apply {
+            putAll(transcriptDisplay.speakerLabels)
+            transcriptDisplay.segments.forEach { segment ->
+                segment.speakerId?.let { id -> if(id !in this) put(id,segment.speakerLabel ?: "Говорящий ${size+1}") }
+            }
+        }
     }
-
-    val durationMs = maxOf(
-        screen.durationMs,
-        playback.durationMs
-    )
-
-    val sliderMaximum = durationMs
-        .coerceAtLeast(1L)
-        .toFloat()
-
-    val currentPosition = if (dragging) {
-        dragPosition
-    } else {
-        playback.positionMs.toFloat()
-    }.coerceIn(0f, sliderMaximum)
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -268,25 +293,38 @@ fun PlaybackScreen(
         )
     }
 
+    if(processingOpen) {
+        ProcessingScreen(screen.title,durationMs,task,screen.audioSaved,transcriptDisplay.hasTranscript,
+            retryEnabled=!recordingActive && !models.busy && !transcriptDisplay.loading && transcriptDisplay.error==null,
+            onBack={processingOpen=false},
+            onRetry={if(models.ready) viewModel.retryTranscription() else onManageModels()},
+            onLibrary=onBack,onCancel=viewModel::cancelLocalMl,
+            modelsRequired=task==null && !models.ready && !models.busy,
+            onManageModels=onManageModels,startError=models.error)
+        return
+    }
+    val editingSegment = transcriptDisplay.segments.firstOrNull { it.id == editSegmentId }
+    if(editingSegment != null) {
+        SegmentEditScreen(segment=editingSegment,speakerLabels=availableSpeakerLabels,
+            saving=editing,error=editError,onDismiss={editSegmentId=null;viewModel.clearEditError()},
+            onListen={viewModel.previewTranscriptSegment(editingSegment.id)},
+            onPause=viewModel::pause,isListening=playback.isPlayRequested,
+            canListen=!recordingActive && playback.error==null && screen.audioSaved &&
+                com.team404bnf.app.playback.SegmentPlaybackRange.create(
+                    editingSegment.startMs,editingSegment.endMs,playback.durationMs)!=null,
+            onSave={text,speaker -> viewModel.saveSegmentEdits(editingSegment.id,text,speaker) })
+        return
+    }
+
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState)
-        }
+        containerColor=ArchiveColors.Background,
+        snackbarHost={SnackbarHost(snackbarHostState)},
+        bottomBar={if(!screen.loading && screen.audioSaved) ArchivePlayer(playback,durationMs,
+            enabled=!recordingActive && screen.error==null && playback.error==null,
+            onSeek=viewModel::seekTo,onToggle=viewModel::togglePlayback,onSpeed=viewModel::cyclePlaybackSpeed)}
     ) { padding ->
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 4.dp,
-                    bottom = 20.dp
-                )
-        ) {
-
+        Box(Modifier.fillMaxSize().padding(padding),contentAlignment=Alignment.TopCenter) {
+            Column(Modifier.widthIn(max=ArchiveDimens.ContentMaxWidth).fillMaxSize().padding(horizontal=ArchiveDimens.PagePadding)) {
             RecordingDetailHeader(
                 title = screen.title,
                 renameEnabled = !renaming &&
@@ -296,19 +334,21 @@ fun PlaybackScreen(
                 hasDeletedSegments =
                     recovery.deletedSegments.isNotEmpty(),
                 hasUserEdits = recovery.hasUserEdits,
+                editsEnabled = !editing,
                 canExportTranscript =
                     transcriptDisplay.hasTranscript &&
                     !editing &&
                     !txtExport.inProgress &&
                     transcriptDisplay.error == null &&
                     !transcriptDisplay.loading &&
-                    transcriptDisplay.segments.isNotEmpty(),
+                    (transcriptDisplay.segments.isNotEmpty() || recovery.deletedSegments.isNotEmpty()),
                 canExportJson =
                     transcriptDisplay.hasTranscript &&
                     !editing &&
                     !jsonExport.inProgress &&
                     transcriptDisplay.error == null &&
-                    !transcriptDisplay.loading,
+                    !transcriptDisplay.loading &&
+                    (transcriptDisplay.segments.isNotEmpty() || recovery.deletedSegments.isNotEmpty()),
                 onBack = onBack,
                 onRename = viewModel::renameChat,
                 onShowInfo = viewModel::showRecordingDetails,
@@ -319,8 +359,9 @@ fun PlaybackScreen(
                     resetDialogOpen = true
                 },
                 onExportTranscript = {
-                    txtExportLauncher.launch(
-                        suggestedTranscriptFileName(screen.title)
+                    viewModel.prepareTxtExport(
+                        onShowVersionSelection = { versionDialogFormat = TranscriptExportFormat.TXT },
+                        onLaunchPicker = ::launchTxtExportPicker
                     )
                 },
                 onExportWav = {
@@ -368,7 +409,7 @@ fun PlaybackScreen(
                 onExportJson = {
                     viewModel.prepareJsonExport(
                         onShowVersionSelection = {
-                            jsonVersionDialogOpen = true
+                            versionDialogFormat = TranscriptExportFormat.JSON
                         },
                         onLaunchPicker = { version ->
                             launchJsonExportPicker(version)
@@ -376,255 +417,80 @@ fun PlaybackScreen(
                     )
                 },
                 wavExportInProgress = wavExport.inProgress,
-                mp3ExportInProgress = mp3Export.inProgress
+                mp3ExportInProgress = mp3Export.inProgress,
+                audioAvailable = screen.audioSaved && screen.error == null,
+                createdAtEpochMs = screen.createdAtEpochMs,
+                durationMs = durationMs,
+                speakerIds = speakerIds
             )
 
-            Spacer(Modifier.height(8.dp))
 
-            when {
-                screen.loading -> {
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-
-                screen.error != null -> {
-
-                    Text(
-                        text = screen.error.orEmpty(),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                else -> {
-
-                    if (transcriptDisplay.segments.isEmpty()) {
-
-                        val message = when {
-                            transcriptDisplay.loading ->
-                                "Загрузка расшифровки..."
-
-                            transcriptDisplay.error != null ->
-                                transcriptDisplay.error.orEmpty()
-
-                            transcriptDisplay.hasTranscript ->
-                                "В расшифровке нет реплик"
-
-                            else ->
-                                "Расшифровка пока недоступна"
-                        }
-
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (transcriptDisplay.error != null) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                when {
+                    screen.loading -> Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center) {CircularProgressIndicator()}
+                    screen.error != null -> Text(screen.error.orEmpty(),color=ArchiveColors.Red,modifier=Modifier.padding(vertical=20.dp))
+                    else -> {
+                        if(task!=null && !transcriptDisplay.hasTranscript) {
+                            TextButton(onClick={processingOpen=true},modifier=Modifier.fillMaxWidth()) {
+                                Text(if(task?.isActive==true) "${task?.stageMessage ?: "Обработка"} →" else "Состояние обработки →")
                             }
-                        )
-                    }
-
-                    if (!transcriptDisplay.hasTranscript) {
-                        Spacer(Modifier.height(12.dp))
-                        Button(
-                            onClick = viewModel::transcribeLocally,
-                            enabled = !localMl.running && !localMl.downloading &&
-                                !editing,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Расшифровать на устройстве")
                         }
-                        TextButton(
-                            onClick = viewModel::downloadLocalModels,
-                            enabled = !localMl.running && !localMl.downloading,
-                        ) {
-                            Text("Скачать модели для офлайн-обработки (~925 МБ)")
-                        }
-                        if (localMl.running || localMl.downloading) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text(localMl.stage ?: "Обработка…", style = MaterialTheme.typography.bodySmall)
-                            }
-                            OutlinedButton(onClick = viewModel::cancelLocalMl) {
-                                Text("Отменить")
-                            }
+                        if(transcriptDisplay.segments.isNotEmpty()) {
+                            Text("Нажмите — слушать · Удерживайте — изменить",style=MaterialTheme.typography.labelSmall,color=ArchiveColors.Muted,modifier=Modifier.padding(vertical=10.dp))
+                            TranscriptMessages(
+                                segments=transcriptDisplay.segments,speakerLabels=availableSpeakerLabels,
+                                originalPositions=transcriptDisplay.originalPositions,
+                                splitBeforeSegmentIds=transcriptDisplay.splitBeforeSegmentIds,
+                                playbackPositionMs=playback.positionMs,isPlaybackRunning=playback.isPlayRequested,
+                                onSegmentClick=viewModel::playFromTranscriptSegment,
+                                onRequestTextEdit={ viewModel.pause();editSegmentId=it.id;viewModel.clearEditError() },
+                                onChangeSpeaker={id,speaker -> viewModel.changeSegmentSpeaker(id,speaker)},
+                                onRenameSpeaker={id,name -> viewModel.renameTranscriptSpeaker(id,name)},
+                                onDeleteSegment={viewModel.deleteTranscriptSegment(it)},
+                                onChangeGroupSpeaker={ids,speaker -> viewModel.changeTranscriptGroupSpeaker(ids,speaker)},
+                                onDeleteGroup={viewModel.deleteTranscriptGroup(it)},
+                                onSplitGroup={viewModel.splitTranscriptGroup(it)},
+                                onRestoreAutoMerge={viewModel.restoreAutomaticMerge(it)},
+                                enabled=!recordingActive && playback.error==null && screen.audioSaved,
+                                editingEnabled=!editing,modifier=Modifier.weight(1f))
                         } else {
-                            localMl.stage?.let { stage ->
-                                Text(stage, style = MaterialTheme.typography.bodySmall)
+                            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical=24.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                                Text(when {
+                                    transcriptDisplay.loading -> "Загрузка расшифровки…"
+                                    transcriptDisplay.error != null -> transcriptDisplay.error.orEmpty()
+                                    transcriptDisplay.hasTranscript -> "В расшифровке нет реплик"
+                                    else -> "Расшифровка ещё не создана"
+                                },style=MaterialTheme.typography.titleMedium)
+                                if(!transcriptDisplay.hasTranscript && !transcriptDisplay.loading && transcriptDisplay.error==null) {
+                                    when {
+                                        task?.isActive==true -> Text("Можно вернуться к записям. Обработка продолжится в фоне.",
+                                            style=MaterialTheme.typography.bodyMedium,color=ArchiveColors.Muted)
+                                        models.busy -> Text(models.stage ?: "Подготовка офлайн-моделей…",
+                                            style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
+                                        !models.ready -> {
+                                            Text("Для расшифровки нужен комплект офлайн-моделей.",
+                                                style=MaterialTheme.typography.bodyMedium,color=ArchiveColors.Muted)
+                                            ArchiveButton("Модели распознавания",onManageModels,
+                                                Modifier.fillMaxWidth(),accent=true,enabled=!recordingActive && !editing)
+                                        }
+                                        task?.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.COMPLETED ->
+                                            Text("Открываем сохранённую расшифровку…",style=MaterialTheme.typography.bodySmall)
+                                        task != null -> Text("Обработка не завершена. Откройте состояние обработки, чтобы повторить попытку.",
+                                            style=MaterialTheme.typography.bodyMedium,color=ArchiveColors.Muted)
+                                        else -> {
+                                            Text("Распознайте речь и определите говорящих, чтобы читать разговор по репликам.",
+                                                style=MaterialTheme.typography.bodyMedium,color=ArchiveColors.Muted)
+                                            ArchiveButton("Расшифровать на устройстве",{
+                                                viewModel.transcribeLocally(); processingOpen=true
+                                            },Modifier.fillMaxWidth(),accent=true,enabled=!editing && !recordingActive)
+                                        }
+                                    }
+                                    LocalStorageNote("Без отправки аудио в интернет")
+                                }
                             }
                         }
-                        localMl.error?.let { error ->
-                            Text(error, color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall)
-                        }
+                        if(recordingActive) Text("Воспроизведение недоступно во время записи звука",style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
+                        playback.error?.let {Text(it,color=ArchiveColors.Red,style=MaterialTheme.typography.bodySmall)}
                     }
-
-                    if (transcriptDisplay.segments.isNotEmpty()) {
-
-                        Text(
-                            text = "Нажмите — слушать · Удерживайте — изменить",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(Modifier.height(6.dp))
-
-                        TranscriptMessages(
-                            segments = transcriptDisplay.segments,
-                            speakerLabels = transcriptDisplay.speakerLabels,
-                            originalPositions = transcriptDisplay.originalPositions,
-                            splitBeforeSegmentIds =
-                                transcriptDisplay.splitBeforeSegmentIds,
-                            playbackPositionMs = playback.positionMs,
-                            isPlaybackRunning = playback.isPlayRequested,
-                            onSegmentClick = viewModel::playFromTranscriptSegment,
-                            onEditText = viewModel::editSegmentText,
-                            onChangeSpeaker = viewModel::changeSegmentSpeaker,
-                            onRenameSpeaker = viewModel::renameTranscriptSpeaker,
-                            onDeleteSegment = viewModel::deleteTranscriptSegment,
-                            onChangeGroupSpeaker =
-                                viewModel::changeTranscriptGroupSpeaker,
-                            onDeleteGroup =
-                                viewModel::deleteTranscriptGroup,
-                            onSplitGroup =
-                                viewModel::splitTranscriptGroup,
-                            onRestoreAutoMerge =
-                                viewModel::restoreAutomaticMerge,
-                            enabled = !recordingActive &&
-                                playback.error == null,
-                            editingEnabled = !editing,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                    } else {
-
-                        Spacer(Modifier.weight(1f))
-                    }
-
-                    if (recordingActive) {
-                        Text(
-                            text = "Воспроизведение недоступно " +
-                                "во время записи звука",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-                    }
-
-                    playback.error?.let { message ->
-
-                        Text(
-                            text = message,
-                            color = MaterialTheme.colorScheme.error
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-
-                        Text(
-                            text = formatPlaybackTime(
-                                currentPosition.toLong()
-                            ),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-
-                        Spacer(Modifier.width(8.dp))
-
-                        Slider(
-                            value = currentPosition,
-                            onValueChange = {
-                                dragging = true
-                                dragPosition = it
-                            },
-                            onValueChangeFinished = {
-                                viewModel.seekTo(
-                                    dragPosition.toLong()
-                                )
-                                dragging = false
-                            },
-                            valueRange = 0f..sliderMaximum,
-                            enabled = !recordingActive &&
-                                playback.error == null &&
-                                durationMs > 0L,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Spacer(Modifier.width(8.dp))
-
-                        Text(
-                            text = formatPlaybackTime(durationMs),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    val speedLabel = when (playback.speed) {
-                        1f -> "1×"
-                        1.25f -> "1.25×"
-                        1.5f -> "1.5×"
-                        1.75f -> "1.75×"
-                        2f -> "2×"
-                        else -> "1×"
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-
-                        Button(
-                            onClick = {
-                                viewModel.togglePlayback()
-                            },
-                            enabled = !recordingActive &&
-                                playback.error == null,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp)
-                        ) {
-
-                            Text(
-                                if (playback.isPlayRequested) {
-                                    "⏸ Пауза"
-                                } else {
-                                    "▶ Воспроизвести"
-                                }
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.cyclePlaybackSpeed()
-                            },
-                            enabled = !recordingActive &&
-                                playback.error == null,
-                            modifier = Modifier.height(56.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp)
-                        ) {
-                            Text(speedLabel)
-                        }
-                    }
-
-                    Spacer(Modifier.height(24.dp))
                 }
             }
         }
@@ -754,10 +620,18 @@ fun PlaybackScreen(
         )
     }
 
-    if (jsonVersionDialogOpen) {
+    val exportFormat = versionDialogFormat
+    if (exportFormat != null) {
+        fun launchSelectedVersion(version: com.team404bnf.app.transcription.ExportVersion) {
+            versionDialogFormat = null
+            when(exportFormat) {
+                TranscriptExportFormat.TXT -> launchTxtExportPicker(version)
+                TranscriptExportFormat.JSON -> launchJsonExportPicker(version)
+            }
+        }
         AlertDialog(
             onDismissRequest = {
-                jsonVersionDialogOpen = false
+                versionDialogFormat = null
             },
             title = {
                 Text("Выберите версию расшифровки")
@@ -776,32 +650,30 @@ fun PlaybackScreen(
                     TextButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            jsonVersionDialogOpen = false
-                            launchJsonExportPicker(
+                            launchSelectedVersion(
                                 com.team404bnf.app.transcription.ExportVersion.CORRECTED
                             )
                         }
                     ) {
-                        Text("С исправлениями")
+                        Text("Отредактированная версия")
                     }
 
                     OutlinedButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            jsonVersionDialogOpen = false
-                            launchJsonExportPicker(
+                            launchSelectedVersion(
                                 com.team404bnf.app.transcription.ExportVersion.ORIGINAL
                             )
                         }
                     ) {
-                        Text("Оригинальная расшифровка")
+                        Text("Оригинальная версия")
                     }
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = {
-                        jsonVersionDialogOpen = false
+                        versionDialogFormat = null
                     }
                 ) {
                     Text("Отмена")
@@ -811,66 +683,20 @@ fun PlaybackScreen(
     }
 }
 
-internal fun suggestJsonFileName(
-    title: String,
-    version: com.team404bnf.app.transcription.ExportVersion
-): String {
-    val sanitized = title
-        .replace(
-            Regex("""[\\/:*?"<>|\p{Cntrl}]"""),
-            "_"
-        )
-        .trim()
-        .trim('.')
-        .take(64)
-        .ifBlank { "Расшифровка" }
+internal fun suggestJsonFileName(title: String, version: com.team404bnf.app.transcription.ExportVersion): String =
+    suggestTranscriptFileName(title, version, "json")
 
-    val suffix = when (version) {
+internal fun suggestTxtFileName(title: String, version: com.team404bnf.app.transcription.ExportVersion): String =
+    suggestTranscriptFileName(title, version, "txt")
+
+private fun suggestTranscriptFileName(
+    title: String, version: com.team404bnf.app.transcription.ExportVersion, extension: String
+): String {
+    val sanitized = title.replace(Regex("""[\\/:*?"<>|\p{Cntrl}]"""), "_")
+        .trim().trim('.').take(64).ifBlank { "Расшифровка" }
+    val suffix = when(version) {
         com.team404bnf.app.transcription.ExportVersion.ORIGINAL -> "_original"
         com.team404bnf.app.transcription.ExportVersion.CORRECTED -> "_corrected"
     }
-
-    return "${sanitized}${suffix}.json"
-}
-
-private fun suggestedTranscriptFileName(
-    title: String
-): String {
-
-    val sanitized = title
-        .replace(
-            Regex("""[\\/:*?"<>|\p{Cntrl}]"""),
-            "_"
-        )
-        .trim()
-        .trim('.')
-        .take(64)
-        .ifBlank { "Расшифровка" }
-
-    return "$sanitized.txt"
-}
-
-private fun formatPlaybackTime(
-    milliseconds: Long
-): String {
-
-    val totalSeconds = (milliseconds / 1000)
-        .coerceAtLeast(0L)
-
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val remainingSeconds = totalSeconds % 60
-
-    return if (hours > 0) {
-        "%02d:%02d:%02d".format(
-            hours,
-            minutes,
-            remainingSeconds
-        )
-    } else {
-        "%02d:%02d".format(
-            minutes,
-            remainingSeconds
-        )
-    }
+    return "$sanitized$suffix.$extension"
 }

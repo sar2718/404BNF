@@ -1,5 +1,8 @@
 package com.team404bnf.app.transcription
 
+import com.google.gson.JsonObject
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.StringWriter
@@ -15,7 +18,7 @@ class TranscriptTxtFormatterTest {
             endMs = 4500L
         )
 
-        val expected = "[00:00–00:04] Участник 1\nИлья, привет. Давай начнём.\n\n"
+        val expected = "[00:00–00:04.500] Участник 1\nИлья, привет. Давай начнём.\n\n"
         assertEquals(expected, entry)
     }
 
@@ -153,4 +156,56 @@ class TranscriptTxtFormatterTest {
 
         assertEquals(expectedExact, writer.toString())
     }
+    private fun originalForVersions(): ParsedTranscript = TranscriptJsonParser.parse("""
+        {"id":"txt-versions","duration":5.0,
+         "segments":[{"id":"one","start":1.2,"end":2.7,"speaker_id":"S1","text":"Оригинал"}],
+         "speaker_labels":{"S1":"Участник"}}
+    """.trimIndent())
+
+    @Test fun versionChoiceUsesTxtDifferencesIncludingRenamedSpeakers() {
+        val original = originalForVersions()
+        assertFalse(TranscriptTxtFormatter.checkExportOptions(original, "{}").showVersionSelection)
+        val edits = JsonObject().apply {
+            add("names", JsonObject().apply { addProperty("S1", "Новое имя") })
+        }
+        assertTrue(TranscriptTxtFormatter.checkExportOptions(original, edits.toString()).showVersionSelection)
+        // Names are meaningful in TXT; the strict JSON schema contains only IDs.
+        assertFalse(TranscriptJsonExporter.checkExportOptions(original, edits.toString()).showVersionSelection)
+    }
+
+    @Test fun allHiddenFragmentsKeepOriginalExportAvailableAndCorrectedVersionEmpty() {
+        val original = originalForVersions()
+        val edits = JsonObject()
+        TranscriptUserEdits.hideSegments(edits, original, listOf("one"))
+        val options = TranscriptTxtFormatter.checkExportOptions(original, edits.toString())
+        assertTrue(options.originalValid); assertTrue(options.correctedValid); assertTrue(options.showVersionSelection)
+        assertEquals(original, TranscriptTxtFormatter.selectVersion(original, edits.toString(), ExportVersion.ORIGINAL))
+        assertTrue(TranscriptTxtFormatter.selectVersion(original, edits.toString(), ExportVersion.CORRECTED).segments.isEmpty())
+    }
+
+    @Test fun txtRetainsSupportForUnknownSpeakersAndMissingTimestamps() {
+        val original = originalForVersions().let { it.copy(segments = listOf(it.segments.first().copy(
+            speakerId = null, startMs = null, endMs = null))) }
+        val options = TranscriptTxtFormatter.checkExportOptions(original, "{}")
+        assertTrue(options.originalValid); assertTrue(options.correctedValid); assertFalse(options.showVersionSelection)
+        val selected = TranscriptTxtFormatter.selectVersion(original, "{}", ExportVersion.ORIGINAL)
+        val writer = StringWriter()
+        TranscriptTxtFormatter.writeTo(writer, "Запись", selected.segments, selected.speakerLabels)
+        assertTrue(writer.toString().contains("Говорящий не указан"))
+    }
+
+    @Test fun txtFileNamesPreserveTheSelectedVersion() {
+        assertEquals("Запись_тест_original.txt", com.team404bnf.app.ui.playback.suggestTxtFileName("Запись/тест", ExportVersion.ORIGINAL))
+        assertEquals("Запись_тест_corrected.txt", com.team404bnf.app.ui.playback.suggestTxtFileName("Запись/тест", ExportVersion.CORRECTED))
+    }
+
+    @Test fun derivedSpeakerLabelsAreNotMistakenForUserEdits() {
+        val original = originalForVersions().copy(speakerLabels = emptyMap())
+        assertFalse(TranscriptTxtFormatter.checkExportOptions(original, "{}").showVersionSelection)
+        val raw = TranscriptTxtFormatter.selectVersion(original, "{}", ExportVersion.ORIGINAL)
+        val corrected = TranscriptTxtFormatter.selectVersion(original, "{}", ExportVersion.CORRECTED)
+        assertEquals(raw, corrected)
+        assertEquals(original.segments, raw.segments)
+    }
+
 }

@@ -26,8 +26,9 @@ import androidx.compose.ui.window.Dialog
 internal fun SpeakerPickerDialog(
     speakerLabels: Map<String, String>,
     selectedSpeakerId: String?,
-    onChoose: (String) -> Unit,
-    onDismiss: () -> Unit
+    onChoose: (String?) -> Unit,
+    onDismiss: () -> Unit,
+    enabled: Boolean = true
 ) {
     val colors = MaterialTheme.colorScheme
 
@@ -81,21 +82,8 @@ internal fun SpeakerPickerDialog(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
 
-                    if (speakerLabels.isEmpty()) {
-
-                        Text(
-                            text = "Нет доступных участников",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                            modifier = Modifier.padding(
-                                horizontal = 12.dp,
-                                vertical = 16.dp
-                            )
-                        )
-
-                    } else {
-
-                        speakerLabels.forEach { (id, name) ->
+                    run {
+                        (listOf(null to "Не определён") + speakerLabels.map { it.key to it.value }).forEach { (id, name) ->
 
                             val isSelected = id == selectedSpeakerId
 
@@ -118,6 +106,7 @@ internal fun SpeakerPickerDialog(
                                     .background(backgroundColor)
                                     .selectable(
                                         selected = isSelected,
+                                        enabled = enabled,
                                         role = Role.RadioButton,
                                         onClick = {
                                             onChoose(id)
@@ -134,7 +123,7 @@ internal fun SpeakerPickerDialog(
                             ) {
 
                                 Text(
-                                    text = name.ifBlank { id },
+                                    text = name.ifBlank { id ?: "Не определён" },
                                     modifier = Modifier.weight(1f),
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (isSelected) {

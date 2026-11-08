@@ -64,7 +64,7 @@ class RecordingRepository(
         dao.insertRecording(recording)
     }
 
-    suspend fun importAudio(uri: Uri): String {
+    suspend fun importAudio(uri: Uri): String = withContext(Dispatchers.IO) {
 
         val id = UUID.randomUUID().toString()
         val manager = AudioImportManager(context)
@@ -95,7 +95,7 @@ class RecordingRepository(
             throw error
         }
 
-        return id
+        id
     }
 
     suspend fun renameRecording(

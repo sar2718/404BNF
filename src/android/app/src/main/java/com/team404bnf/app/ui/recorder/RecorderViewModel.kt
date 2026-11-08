@@ -16,6 +16,16 @@ class RecorderViewModel(
 
     val state = RecordingSession.state
 
+    fun consumeSavedRecording(recordingId: String) {
+        RecordingSession.update {
+            if(it.savedRecordingId == recordingId) it.copy(savedRecordingId = null) else it
+        }
+    }
+
+    fun prepareNewRecording() {
+        if(state.value.status == RecordingStatus.SAVED) RecordingSession.set(RecorderUiState())
+    }
+
     fun start() {
 
         if (state.value.status !in setOf(
@@ -76,6 +86,9 @@ class RecorderViewModel(
     }
 
     private fun sendCommand(action: String) {
+
+        // A repeated failure must emit again so the UI can release its pending action.
+        RecordingSession.update { it.copy(message = null) }
 
         val intent = Intent(
             context,

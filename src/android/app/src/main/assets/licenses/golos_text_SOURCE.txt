@@ -1,0 +1,5 @@
+Golos Text
+Source: https://github.com/googlefonts/golos-text
+Revision: 003636d5e7c023e339b664ec2e7836906e456737
+Bundled files: GolosText-Regular.ttf, GolosText-Medium.ttf, GolosText-SemiBold.ttf, GolosText-Bold.ttf
+License: SIL Open Font License 1.1; see golos_text_OFL.txt.

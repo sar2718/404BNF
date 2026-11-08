@@ -8,6 +8,14 @@ package com.team404bnf.ml
  */
 enum class ModelId { GIGAAM_FP32, SILERO_VAD, WESPEAKER_CAMPP }
 
+data class ModelPackage(
+    val id: String,
+    val title: String,
+    val description: String,
+    val models: Set<ModelId>,
+    val approximateDownloadBytes: Long
+)
+
 data class ModelAsset(
     val model: ModelId,
     val relativePath: String,
@@ -27,6 +35,14 @@ data class ModelAsset(
 }
 
 object ModelCatalog {
+    const val DEFAULT_PACKAGE_ID = "offline-ru-v1"
+    val packages = listOf(ModelPackage(
+        id = DEFAULT_PACKAGE_ID,
+        title = "GigaAM v3 FP32 · Silero VAD · WeSpeaker CAM++",
+        description = "Распознавание русской речи и разделение разговора по говорящим. Обработка на устройстве без отправки аудио в интернет.",
+        models = setOf(ModelId.GIGAAM_FP32, ModelId.SILERO_VAD, ModelId.WESPEAKER_CAMPP),
+        approximateDownloadBytes = 970_000_000L
+    ))
     const val GIGAAM_REVISION = "322c3b29492673eb7d0b434bfa9dfb8653e34d02"
     private const val HF = "https://huggingface.co"
     private const val GIGAAM_BASE = "$HF/istupakov/gigaam-v3-onnx/resolve/$GIGAAM_REVISION"

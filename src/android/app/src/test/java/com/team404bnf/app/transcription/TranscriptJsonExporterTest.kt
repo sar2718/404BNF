@@ -259,15 +259,73 @@ class TranscriptJsonExporterTest {
     @Test
     fun testStrictJsonSchemaConformance() {
         val original = originalTranscript()
-        val jsonString = TranscriptJsonExporter.export(original, version = ExportVersion.ORIGINAL)
+        val first = original.segments.first()
+        val edits = JsonObject().apply {
+            add("texts", JsonObject().apply { addProperty(first.id, "Исправленный текст") })
+        }
+        for (version in ExportVersion.entries) {
+            val jsonString = TranscriptJsonExporter.export(original, edits.toString(), version)
+            val root = JsonParser.parseString(jsonString).asJsonObject
+            assertEquals(setOf("transcript"), root.keySet())
+            assertTrue(root.get("transcript").isJsonArray)
+            val array = root.getAsJsonArray("transcript")
+            array.forEachIndexed { index, element ->
+                assertTrue(element.isJsonObject)
+                val obj = element.asJsonObject
+                assertEquals(setOf("speaker_id", "start_ms", "end_ms", "text"), obj.keySet())
+                assertTrue(obj.get("speaker_id").asJsonPrimitive.isString)
+                assertTrue(obj.get("text").asJsonPrimitive.isString)
+                for (field in listOf("start_ms", "end_ms")) {
+                    val value = obj.get(field).asJsonPrimitive
+                    assertTrue(value.isNumber)
+                    assertTrue("$field must be an integer token in milliseconds", value.toString().matches(Regex("[0-9]+")))
+                }
+                assertEquals(original.segments[index].startMs, obj.get("start_ms").asLong)
+                assertEquals(original.segments[index].endMs, obj.get("end_ms").asLong)
+            }
+            assertEquals(if (version == ExportVersion.CORRECTED) "Исправленный текст" else first.text,
+                array.first().asJsonObject.get("text").asString)
+        }
+    }
 
-        val root = JsonParser.parseString(jsonString).asJsonObject
-        assertEquals(setOf("transcript"), root.keySet())
+    @Test
+    fun testExactExampleFromRequiredPhotoFormat() {
+        val original = TranscriptJsonParser.parse("""
+            {
+                "id": "photo-example", "duration": 5.0,
+                "segments": [
+                    {"id": "fragment-1", "start": 1.25, "end": 4.38,
+                     "speaker_id": "speaker_1", "text": "Добрый день!"}
+                ]
+            }
+        """.trimIndent())
+        val expected = JsonParser.parseString("""
+            {"transcript":[{"speaker_id":"speaker_1","start_ms":1250,"end_ms":4380,"text":"Добрый день!"}]}
+        """.trimIndent())
+        for (version in ExportVersion.entries) {
+            val actual = JsonParser.parseString(TranscriptJsonExporter.export(original, version = version))
+            assertEquals(expected, actual)
+            val segment = actual.asJsonObject.getAsJsonArray("transcript")[0].asJsonObject
+            assertEquals("1250", segment.get("start_ms").toString())
+            assertEquals("4380", segment.get("end_ms").toString())
+        }
+    }
 
-        val array = root.getAsJsonArray("transcript")
-        array.forEach { element ->
-            val obj = element.asJsonObject
-            assertEquals(setOf("speaker_id", "start_ms", "end_ms", "text"), obj.keySet())
+    @Test
+    fun testEachMissingRequiredFieldRejectsExportInsteadOfWritingNull() {
+        val original = originalTranscript()
+        val first = original.segments.first()
+        val incompleteSegments = listOf(first.copy(speakerId = null), first.copy(startMs = null), first.copy(endMs = null))
+        for (segment in incompleteSegments) {
+            val incomplete = original.copy(segments = listOf(segment) + original.segments.drop(1))
+            for (version in ExportVersion.entries) {
+                try {
+                    TranscriptJsonExporter.export(incomplete, version = version)
+                    fail("Incomplete $version export must not produce null fields")
+                } catch (error: IllegalArgumentException) {
+                    assertTrue(error.message.orEmpty().contains("неполные данные"))
+                }
+            }
         }
     }
 

@@ -6,6 +6,7 @@ import android.util.Log
 import com.team404bnf.app.data.db.AppDatabase
 import com.team404bnf.app.data.db.TranscriptionTaskDao
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -97,36 +98,39 @@ object TranscriptionTaskManager {
 
     fun getTask(recordingId: String): TranscriptionTask? = _tasksMap.value[recordingId]
 
-    fun enqueue(context: Context, recordingId: String) {
+    /** Await durable enqueue and FGS startup before the recording service can finish. */
+    suspend fun enqueueSavedRecording(context: Context, recordingId: String) {
         initDatabase(context)
-        scope.launch {
-            try {
-                enqueueAndStart(context, recordingId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Could not enqueue $recordingId", e)
-                runCatching {
-                    updateTask(
-                        recordingId = recordingId,
-                        status = TranscriptionTaskStatus.FAILED,
-                        errorMessage = "Ошибка запуска фонового сервиса: ${e.message}"
-                    )
-                }.onFailure { failure ->
-                    Log.e(TAG, "Could not persist enqueue failure for $recordingId", failure)
-                }
-            }
+        awaitDatabaseInitialized()
+        val task = enqueueTask(recordingId) ?: return
+        try {
+            startService(context, task.recordingId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            updateTask(recordingId, TranscriptionTaskStatus.FAILED,
+                errorMessage = "Не удалось запустить обработку: ${e.message}", attemptId = task.attemptId)
         }
     }
 
-    fun retry(context: Context, recordingId: String) = enqueue(context, recordingId)
+    /** Serialize destructive model operations with both enqueue and native ML lifetime. */
+    suspend fun <T> withModelsIdle(action: suspend () -> T): T {
+        check(!hasActiveOrQueuedTasks()) { "Модели используются: дождитесь завершения обработки" }
+        check(mlMutex.tryLock()) { "Модели ещё используются обработкой" }
+        try {
+            return transitionMutex.withLock {
+                check(!hasActiveOrQueuedTasks() && activeJobs.isEmpty()) {
+                    "Модели используются: дождитесь завершения обработки"
+                }
+                action()
+            }
+        } finally {
+            mlMutex.unlock()
+        }
+    }
 
     internal suspend fun enqueueForTest(recordingId: String): TranscriptionTask? =
         enqueueTask(recordingId)
-
-    private suspend fun enqueueAndStart(context: Context, recordingId: String) {
-        awaitDatabaseInitialized()
-        val task = enqueueTask(recordingId)
-        if (task != null) startService(context, task.recordingId)
-    }
 
     private suspend fun enqueueTask(recordingId: String): TranscriptionTask? {
         return transitionMutex.withLock {

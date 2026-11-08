@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme._404BNF" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme._404BNF" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#121113</item>
+        <item name="android:colorAccent">#D4AF75</item>
+    </style>
 </resources>

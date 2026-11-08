@@ -1,6 +1,7 @@
 package com.team404bnf.app.playback
 
 import android.content.Context
+import com.team404bnf.app.models.RecognitionModels
 import android.net.Uri
 
 import androidx.lifecycle.ViewModel
@@ -14,9 +15,6 @@ import com.team404bnf.app.data.repository.TranscriptRepository
 import com.team404bnf.app.recording.RecordingSession
 import com.team404bnf.app.recording.RecordingStatus
 import com.team404bnf.app.transcription.TranscriptSegment
-import com.team404bnf.app.localml.LocalTranscriptionPipeline
-import com.team404bnf.ml.ModelManager
-import com.team404bnf.ml.ModelEvent
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,6 +23,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
+import com.team404bnf.app.transcription.TranscriptionTaskManager
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -33,19 +34,13 @@ import java.io.IOException
 import java.io.OutputStreamWriter
 import com.team404bnf.app.transcription.TranscriptTxtFormatter
 
-data class LocalMlState(
-    val running: Boolean = false,
-    val downloading: Boolean = false,
-    val stage: String? = null,
-    val error: String? = null,
-    val completed: Boolean = false
-)
-
 data class PlaybackScreenState(
     val title: String = "Аудиозапись",
     val durationMs: Long = 0,
     val loading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val createdAtEpochMs: Long? = null,
+    val audioSaved: Boolean = false
 )
 
 data class TranscriptDisplayState(
@@ -99,7 +94,7 @@ class PlaybackViewModel(
     private val appContext = context.applicationContext
 
     private val _transcriptDisplayState = MutableStateFlow(
-        TranscriptDisplayState()
+        TranscriptDisplayState(loading = true)
     )
 
     val transcriptDisplayState =
@@ -110,6 +105,10 @@ class PlaybackViewModel(
 
     private val _editError = MutableStateFlow<String?>(null)
     val editError = _editError.asStateFlow()
+
+    // A save result survives Activity recreation; the editor closes after the repository transaction.
+    private val _savedSegmentId = MutableStateFlow<String?>(null)
+    val savedSegmentId = _savedSegmentId.asStateFlow()
 
     private val _renaming = MutableStateFlow(false)
     val renaming = _renaming.asStateFlow()
@@ -148,9 +147,8 @@ class PlaybackViewModel(
 
     val recoveryState = _recoveryState.asStateFlow()
 
-    private val _localMlState = MutableStateFlow(LocalMlState())
-    val localMlState = _localMlState.asStateFlow()
-    private var localMlJob: Job? = null
+    private val models = RecognitionModels.get(appContext)
+    val modelState = models.state
 
     private val controller = PlaybackController(context)
 
@@ -161,6 +159,9 @@ class PlaybackViewModel(
     )
 
     val screenState = _screenState.asStateFlow()
+    val transcriptionTask = TranscriptionTaskManager.observeTask(recordingId).stateIn(
+        viewModelScope, SharingStarted.Eagerly, TranscriptionTaskManager.getTask(recordingId)
+    )
 
     init {
         viewModelScope.launch {
@@ -241,7 +242,9 @@ class PlaybackViewModel(
                     _screenState.value = PlaybackScreenState(
                         title = recording.title,
                         durationMs = recording.durationMs,
-                        loading = false
+                        loading = false,
+                        audioSaved = true,
+                        createdAtEpochMs = repository.getRecordingDetails(recordingId)?.createdAtEpochMs
                     )
                 }
 
@@ -267,20 +270,6 @@ class PlaybackViewModel(
             }
         }
 
-        // Наблюдаем за фоновыми задачами расшифровки ML
-        viewModelScope.launch {
-            com.team404bnf.app.transcription.TranscriptionTaskManager.observeTask(recordingId)
-                .collect { task ->
-                    if (task != null) {
-                        _localMlState.value = LocalMlState(
-                            running = task.isActive,
-                            stage = task.stageMessage,
-                            error = task.errorMessage,
-                            completed = task.status == com.team404bnf.app.transcription.TranscriptionTaskStatus.COMPLETED
-                        )
-                    }
-                }
-        }
     }
 
     fun changeTranscriptGroupSpeaker(
@@ -437,9 +426,32 @@ class PlaybackViewModel(
         _renameError.value = null
     }
 
+    fun prepareTxtExport(
+        onShowVersionSelection: () -> Unit,
+        onLaunchPicker: (com.team404bnf.app.transcription.ExportVersion) -> Unit
+    ) {
+        if (_txtExportState.value.inProgress || _editing.value) return
+        _txtExportState.value = TxtExportState(inProgress = true)
+        viewModelScope.launch {
+            try {
+                val options = transcriptRepository.checkTxtExportOptions(recordingId)
+                _txtExportState.value = TxtExportState()
+                if (options.showVersionSelection) onShowVersionSelection()
+                else onLaunchPicker(if(options.correctedValid) com.team404bnf.app.transcription.ExportVersion.CORRECTED
+                    else com.team404bnf.app.transcription.ExportVersion.ORIGINAL)
+            } catch (error: CancellationException) {
+                _txtExportState.value = TxtExportState()
+                throw error
+            } catch (error: Exception) {
+                _txtExportState.value = TxtExportState(error = error.message ?: "Не удалось проверить расшифровку для экспорта")
+            }
+        }
+    }
+
     fun exportTranscriptTxt(
         uri: Uri,
-        resolver: ContentResolver
+        resolver: ContentResolver,
+        version: com.team404bnf.app.transcription.ExportVersion = com.team404bnf.app.transcription.ExportVersion.CORRECTED
     ) {
         if (_txtExportState.value.inProgress) return
 
@@ -452,8 +464,7 @@ class PlaybackViewModel(
             transcript.loading ||
             transcript.error != null ||
             _editing.value ||
-            !_transcriptDisplayState.value.hasTranscript ||
-            transcript.segments.isEmpty()
+            !_transcriptDisplayState.value.hasTranscript
         ) {
             _txtExportState.value = TxtExportState(
                 error = "Расшифровка недоступна для экспорта"
@@ -463,8 +474,6 @@ class PlaybackViewModel(
 
         // Фиксируем данные на момент начала экспорта.
         val title = screen.title
-        val segments = transcript.segments.toList()
-        val speakerLabels = transcript.speakerLabels.toMap()
 
         _txtExportState.value = TxtExportState(
             inProgress = true
@@ -473,7 +482,8 @@ class PlaybackViewModel(
         viewModelScope.launch {
 
             try {
-
+                val selected = transcriptRepository.getForTxtExport(recordingId, version)
+                    ?: throw IOException("Расшифровка недоступна для экспорта")
                 withContext(Dispatchers.IO) {
 
                     val output = resolver.openOutputStream(
@@ -491,8 +501,8 @@ class PlaybackViewModel(
                         TranscriptTxtFormatter.writeTo(
                             writer = writer,
                             title = title,
-                            segments = segments,
-                            speakerLabels = speakerLabels
+                            segments = selected.segments,
+                            speakerLabels = selected.speakerLabels
                         )
                     }
                 }
@@ -507,7 +517,7 @@ class PlaybackViewModel(
             } catch (e: Exception) {
 
                 _txtExportState.value = TxtExportState(
-                    error = "Не удалось сохранить расшифровку"
+                    error = e.message ?: "Не удалось сохранить расшифровку"
                 )
             }
         }
@@ -716,13 +726,13 @@ class PlaybackViewModel(
 
     private fun submitEdit(
         action: suspend () -> Unit
-    ) {
-        if (_editing.value) return
+    ): Job? {
+        if (_editing.value) return null
 
         _editing.value = true
         _editError.value = null
 
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 action()
             } catch (e: CancellationException) {
@@ -734,15 +744,6 @@ class PlaybackViewModel(
                 _editing.value = false
             }
         }
-    }
-
-    fun editSegmentText(
-        segmentId: String,
-        text: String
-    ) = submitEdit {
-        transcriptRepository.updateSegmentText(
-            recordingId, segmentId, text
-        )
     }
 
     fun changeSegmentSpeaker(
@@ -772,46 +773,34 @@ class PlaybackViewModel(
         )
     }
 
+    /** One repository transaction keeps text, speaker and grouping consistent. */
+    fun saveSegmentEdits(segmentId: String, text: String, speakerId: String?) {
+        if (_editing.value) return
+        _savedSegmentId.value = null
+        submitEdit {
+            transcriptRepository.updateSegmentEdits(recordingId, segmentId, text, speakerId)
+            _savedSegmentId.value = segmentId
+        }
+    }
+
+    fun consumeSegmentSaveResult() {
+        _savedSegmentId.value = null
+    }
+
+    fun retryTranscription() {
+        transcribeLocally()
+    }
+
     fun clearEditError() {
         _editError.value = null
     }
 
-    /** Explicit opt-in: models are never downloaded automatically. */
-    fun downloadLocalModels() {
-        if (localMlJob?.isActive == true || _transcriptDisplayState.value.hasTranscript) return
-        _localMlState.value = LocalMlState(downloading = true, stage = "Подготовка загрузки моделей…")
-        localMlJob = viewModelScope.launch {
-            try {
-                ModelManager(appContext).ensureInstalled { event ->
-                    val stage = when (event) {
-                        is ModelEvent.Verified -> "Проверено: ${event.asset.fileName}"
-                        is ModelEvent.Installed -> "Скачано: ${event.asset.fileName}"
-                        is ModelEvent.Downloading -> "${event.asset.fileName}: " +
-                            "${event.downloaded / 1_048_576} МиБ"
-                    }
-                    _localMlState.update { it.copy(stage = stage) }
-                }
-                _localMlState.value = LocalMlState(stage = "Все модели установлены")
-            } catch (e: CancellationException) {
-                _localMlState.value = LocalMlState(stage = "Загрузка отменена")
-                throw e
-            } catch (e: Exception) {
-                _localMlState.value = LocalMlState(error = e.message ?: "Ошибка загрузки моделей")
-            } finally {
-                localMlJob = null
-            }
-        }
-    }
-
-    /** Turns a stored recording into JSON v1 and persists it through Edik's repository. */
     fun transcribeLocally() {
-        if (_transcriptDisplayState.value.hasTranscript ||
-            _screenState.value.loading || _screenState.value.error != null) return
-        if (isMicrophoneBusy()) {
-            _localMlState.value = LocalMlState(error = "Дождитесь завершения записи")
-            return
-        }
-        com.team404bnf.app.transcription.TranscriptionTaskManager.enqueue(appContext, recordingId)
+        if (_transcriptDisplayState.value.loading || _transcriptDisplayState.value.error != null ||
+            _transcriptDisplayState.value.hasTranscript || _screenState.value.loading ||
+            _screenState.value.error != null || !_screenState.value.audioSaved || isMicrophoneBusy() ||
+            TranscriptionTaskManager.getTask(recordingId)?.isActive == true) return
+        models.launchTranscription(recordingId)
     }
 
     fun cancelLocalMl() {
@@ -858,6 +847,16 @@ class PlaybackViewModel(
         if (!segmentExists) return
 
         controller.playFrom(startMs)
+    }
+
+    fun previewTranscriptSegment(segmentId: String) {
+        if (_screenState.value.loading || _screenState.value.error != null ||
+            playbackState.value.error != null || isMicrophoneBusy()) {
+            controller.pause()
+            return
+        }
+        val segment = _transcriptDisplayState.value.segments.firstOrNull { it.id == segmentId }
+        controller.playRange(segment?.startMs, segment?.endMs)
     }
 
     fun cyclePlaybackSpeed() {

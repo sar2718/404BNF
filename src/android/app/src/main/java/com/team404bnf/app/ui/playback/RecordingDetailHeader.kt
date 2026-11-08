@@ -6,14 +6,18 @@ import androidx.compose.runtime.*
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-import com.team404bnf.app.R
+import com.team404bnf.app.ui.components.*
+import com.team404bnf.app.ui.theme.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private enum class ExportCategory(
     val title: String,
@@ -54,7 +58,12 @@ fun RecordingDetailHeader(
     onExportWav: () -> Unit,
     onExportMp3: () -> Unit,
     wavExportInProgress: Boolean,
-    mp3ExportInProgress: Boolean = false
+    mp3ExportInProgress: Boolean = false,
+    audioAvailable: Boolean = true,
+    createdAtEpochMs: Long? = null,
+    durationMs: Long = 0,
+    speakerIds: List<String> = emptyList(),
+    editsEnabled: Boolean = true
 ) {
     var menuExpanded by remember {
         mutableStateOf(false)
@@ -89,13 +98,13 @@ fun RecordingDetailHeader(
         canExportTranscript,
         canExportJson,
         wavExportInProgress,
-        mp3ExportInProgress
+        mp3ExportInProgress, audioAvailable
     ) {
         buildList {
             if (canExportTranscript) add(ExportFormat.TXT)
             if (canExportJson) add(ExportFormat.JSON)
-            if (!wavExportInProgress) add(ExportFormat.WAV)
-            if (!mp3ExportInProgress) add(ExportFormat.MP3)
+            if (audioAvailable && !wavExportInProgress) add(ExportFormat.WAV)
+            if (audioAvailable && !mp3ExportInProgress) add(ExportFormat.MP3)
         }
     }
 
@@ -126,120 +135,45 @@ fun RecordingDetailHeader(
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_back),
-                contentDescription = "Назад",
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        }
-
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-
-        Box {
-
-            IconButton(
-                onClick = {
-                    menuExpanded = true
-                },
-                modifier = Modifier.semantics {
-                    contentDescription = "Меню чата"
-                }
-            ) {
-                Text(
-                    text = "⋮",
-                    style = MaterialTheme.typography.headlineSmall
-                )
+    Column {
+        Row(Modifier.fillMaxWidth().padding(top=4.dp), verticalAlignment=Alignment.CenterVertically) {
+            ArchiveIconButton(ArchiveSymbol.Back, "Назад", onBack)
+            Column(Modifier.weight(1f)) {
+                Text(title,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
+                val date = createdAtEpochMs?.let { SimpleDateFormat("d MMMM",Locale.getDefault()).format(Date(it)) }
+                Text(listOfNotNull(date, archiveTime(durationMs)).joinToString(" · "),style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
             }
-
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = {
-                    menuExpanded = false
-                }
-            ) {
-
-                DropdownMenuItem(
-                    text = {
-                        Text("Переименовать чат")
-                    },
-                    enabled = renameEnabled,
-                    onClick = {
-                        menuExpanded = false
-                        draftTitle = title
-                        renameDialogOpen = true
+            Box {
+                ArchiveIconButton(ArchiveSymbol.More,"Действия с записью",{menuExpanded=true})
+                DropdownMenu(expanded=menuExpanded,onDismissRequest={menuExpanded=false}) {
+                    DropdownMenuItem(text={Text("Переименовать запись")},enabled=renameEnabled,onClick={menuExpanded=false;draftTitle=title;renameDialogOpen=true})
+                    if(hasTranscript) {
+                        if(hasDeletedSegments) DropdownMenuItem(text={Text("Восстановить удалённые")},enabled=editsEnabled,onClick={menuExpanded=false;onRestoreDeleted()})
+                        if(hasUserEdits) DropdownMenuItem(text={Text("Сбросить исправления",color=ArchiveColors.Red)},enabled=editsEnabled,onClick={menuExpanded=false;onResetEdits()})
                     }
-                )
-
-                if (hasTranscript && hasDeletedSegments) {
-
-                    DropdownMenuItem(
-                        text = {
-                            Text("Восстановить удалённые")
-                        },
-
-                        onClick = {
-                            menuExpanded = false
-                            onRestoreDeleted()
-                        }
-                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(text={Text("Информация о записи")},onClick={menuExpanded=false;onShowInfo()})
                 }
-
-                if (hasTranscript && hasUserEdits) {
-
-                    DropdownMenuItem(
-                        text = {
-                            Text("Сбросить исправления")
-                        },
-
-                        onClick = {
-                            menuExpanded = false
-                            onResetEdits()
-                        }
-                    )
-                }
-
-                DropdownMenuItem(
-                    text = {
-                        Text("Экспортировать")
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        openExportSheet()
-                    }
-                )
-
-                HorizontalDivider()
-
-                DropdownMenuItem(
-                    text = {
-                        Text("Информация о записи")
-                    },
-
-                    onClick = {
-                        menuExpanded = false
-                        onShowInfo()
-                    }
-                )
             }
         }
+        Row(Modifier.fillMaxWidth().padding(top=20.dp,bottom=12.dp),verticalAlignment=Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end=12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                if(speakerIds.isNotEmpty()) Row(horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+                    speakerIds.take(7).forEachIndexed {index,_ ->
+                        Box(Modifier.size(9.dp).background(ArchiveColors.speaker(index),CircleShape))
+                    }
+                }
+                if(hasTranscript) Text(
+                    if(speakerIds.isEmpty()) "Говорящие не определены" else "${speakerIds.size} ${speakerCountLabel(speakerIds.size)}",
+                    style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
+            }
+            OutlinedButton(onClick={openExportSheet()},enabled=availableExportFormats.isNotEmpty(),
+                shape=RoundedCornerShape(10.dp),contentPadding=PaddingValues(horizontal=12.dp,vertical=8.dp)) {
+                ArchiveIcon(ArchiveSymbol.Upload,Modifier.size(16.dp),ArchiveColors.Gold)
+                Spacer(Modifier.width(6.dp));Text("Экспорт",style=MaterialTheme.typography.labelMedium)
+            }
+        }
+        HorizontalDivider()
     }
 
     if (exportSheetOpen) {
@@ -277,6 +211,9 @@ fun RecordingDetailHeader(
                         }
 
                         ListItem(
+                            colors = ListItemDefaults.colors(containerColor=ArchiveColors.Surface),
+                            leadingContent = { ArchiveIcon(if(exportCategory==ExportCategory.TEXT) ArchiveSymbol.Document else ArchiveSymbol.Wave,color=ArchiveColors.Gold) },
+                            trailingContent = { ArchiveIcon(ArchiveSymbol.Next,color=ArchiveColors.Muted) },
                             headlineContent = {
                                 Text(exportCategory.title)
                             },
@@ -335,6 +272,9 @@ fun RecordingDetailHeader(
                     } else {
                         formats.forEach { format ->
                             ListItem(
+                                colors = ListItemDefaults.colors(containerColor=ArchiveColors.Surface),
+                                leadingContent = { ArchiveIcon(if(category==ExportCategory.TEXT) ArchiveSymbol.Document else ArchiveSymbol.Wave,color=ArchiveColors.Gold) },
+                                trailingContent = { ArchiveIcon(ArchiveSymbol.Next,color=ArchiveColors.Muted) },
                                 headlineContent = {
                                     Text(format.title)
                                 },
@@ -360,7 +300,7 @@ fun RecordingDetailHeader(
             },
 
             title = {
-                Text("Переименовать чат")
+                Text("Переименовать запись")
             },
 
             text = {
@@ -405,4 +345,10 @@ fun RecordingDetailHeader(
             }
         )
     }
+}
+private fun speakerCountLabel(count: Int): String = when {
+    count % 100 in 11..14 -> "говорящих"
+    count % 10 == 1 -> "говорящий"
+    count % 10 in 2..4 -> "говорящих"
+    else -> "говорящих"
 }

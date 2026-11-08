@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -38,27 +37,18 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineBreak
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 import com.team404bnf.app.transcription.TranscriptSegment
+import com.team404bnf.app.ui.theme.ArchiveColors
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 
 @Composable
 fun TranscriptMessages(
@@ -69,7 +59,7 @@ fun TranscriptMessages(
     playbackPositionMs: Long,
     isPlaybackRunning: Boolean,
     onSegmentClick: (Long) -> Unit,
-    onEditText: (String, String) -> Unit,
+    onRequestTextEdit: (TranscriptSegment) -> Unit,
     onChangeSpeaker: (String, String?) -> Unit,
     onRenameSpeaker: (String, String) -> Unit,
     onDeleteSegment: (String) -> Unit,
@@ -107,6 +97,10 @@ fun TranscriptMessages(
             originalPositions = originalPositions,
             splitBeforeSegmentIds = splitBeforeSegmentIds
         )
+    }
+
+    val restorableStarts = remember(segments, originalPositions, splitBeforeSegmentIds) {
+        restorableMergeStarts(segments, originalPositions, splitBeforeSegmentIds)
     }
 
     val activeGroupIndices = remember(
@@ -277,36 +271,12 @@ fun TranscriptMessages(
         }.distinct()
     }
 
-    val colors = MaterialTheme.colorScheme
-
-    val palette = listOf(
-        colors.primaryContainer to colors.onPrimaryContainer,
-        colors.secondaryContainer to colors.onSecondaryContainer,
-        colors.tertiaryContainer to colors.onTertiaryContainer,
-        colors.surfaceVariant to colors.onSurfaceVariant
-    )
-
-    val textMeasurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-
-    val messageTextStyle = MaterialTheme.typography.bodyMedium.copy(
-        lineBreak = LineBreak.Paragraph.copy(
-            strategy = LineBreak.Strategy.Balanced
-        )
-    )
-
-    // Рассчитываем максимальную ширину сообщений
-    // относительно доступной ширины экрана.
-    BoxWithConstraints(
-        modifier = modifier.fillMaxWidth()
-    ) {
-        val maxBubbleWidth = maxWidth * 0.88f
-
+    Box(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             itemsIndexed(
                 items = messageGroups,
@@ -321,16 +291,9 @@ fun TranscriptMessages(
                     segment.speakerId
                 )
 
-                val isRight = speakerIds.size == 2 &&
-                    speakerIndex == 1
-
-                val (backgroundColor, contentColor) =
-                    if (speakerIndex == -1) {
-                        colors.surfaceVariant to
-                            colors.onSurfaceVariant
-                    } else {
-                        palette[speakerIndex % palette.size]
-                    }
+                val speakerColor = ArchiveColors.speaker(speakerIndex)
+                val backgroundColor = ArchiveColors.Background
+                val contentColor = ArchiveColors.Text
 
                 val speakerName =
                     if (segment.speakerId == null) {
@@ -341,29 +304,14 @@ fun TranscriptMessages(
                             ?: "Участник ${speakerIndex + 1}"
                     }
 
-                val calculatedWidth = remember(
-                    group.text,
-                    maxBubbleWidth,
-                    messageTextStyle,
-                    density,
-                    textMeasurer
-                ) {
-                    calculateBubbleWidth(
-                        text = group.text,
-                        maxBubbleWidth = maxBubbleWidth,
-                        textMeasurer = textMeasurer,
-                        textStyle = messageTextStyle,
-                        density = density
-                    )
-                }
-
                 var menuExpanded by remember(group.id) {
                     mutableStateOf(false)
                 }
 
-                var selectedPart by remember(group.id) {
-                    mutableStateOf<TranscriptSegment?>(null)
+                var selectedPartId by remember(group.id) {
+                    mutableStateOf<String?>(null)
                 }
+                val selectedPart = group.segments.firstOrNull { it.id == selectedPartId }
 
                 var choosingPart by remember(group.id) {
                     mutableStateOf(false)
@@ -375,49 +323,26 @@ fun TranscriptMessages(
 
                 val displayedBackground by animateColorAsState(
                     targetValue = if (isActive) {
-                        lerp(
-                            backgroundColor,
-                            colors.onSurface,
-                            0.10f
-                        )
+                        ArchiveColors.Active
                     } else {
                         backgroundColor
                     },
                     label = "transcriptBackground"
                 )
 
-                val highlightBorder by animateColorAsState(
-                    targetValue = if (isActive) {
-                        colors.primary
-                    } else {
-                        Color.Transparent
-                    },
-                    label = "transcriptBorder"
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (isRight) {
-                        Arrangement.End
-                    } else {
-                        Arrangement.Start
-                    }
+                    horizontalArrangement = Arrangement.Start
                 ) {
                     Box {
-                        // Ширина определяется содержимым,
-                        // но не превышает 88% ширины экрана.
                         Column(
                             modifier = Modifier
-                                .then(
-                                    if (calculatedWidth == null) {
-                                        Modifier.widthIn(max = maxBubbleWidth)
-                                    } else {
-                                        Modifier.width(calculatedWidth)
-                                    }
-                                )
-                                .border(2.dp, highlightBorder, RoundedCornerShape(16.dp))
-                                .clip(RoundedCornerShape(16.dp))
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(displayedBackground)
+                                .drawBehind {
+                                    if(isActive) drawLine(ArchiveColors.Red, Offset(0f,8.dp.toPx()),Offset(0f,size.height-8.dp.toPx()),2.dp.toPx())
+                                }
                                 .combinedClickable(
                                     enabled = enabled || editingEnabled,
                                     onClickLabel = if (canPlaySegment) "Воспроизвести реплику" else null,
@@ -432,7 +357,7 @@ fun TranscriptMessages(
                                     onLongClick = {
                                         if (editingEnabled) {
                                             choosingPart = false
-                                            selectedPart = null
+                                            selectedPartId = null
                                             menuExpanded = true
                                         }
                                     }
@@ -440,37 +365,15 @@ fun TranscriptMessages(
                                 .padding(12.dp)
                         ) {
 
-                            Text(
-                                text = speakerName,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = contentColor
-                            )
-
-                            Spacer(Modifier.height(6.dp))
-
-                            Text(
-                                text = group.text,
-                                style = messageTextStyle,
-                                color = contentColor
-                            )
-
-                            val start = group.startMs
-                            val end = group.endMs
-
-                            if (start != null && end != null) {
-
-                                Spacer(Modifier.height(6.dp))
-
-                                Text(
-                                    text = "${formatSegmentTime(start)}" +
-                                        " – ${formatSegmentTime(end)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = contentColor.copy(alpha = 0.75f),
-                                    modifier = Modifier.align(Alignment.Start),
-                                    textAlign = TextAlign.Start
-                                )
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                group.startMs?.let { start ->
+                                    Text(formatSegmentTime(start),style=MaterialTheme.typography.labelSmall,color=speakerColor)
+                                    Spacer(Modifier.width(24.dp))
+                                }
+                                Text(speakerName.uppercase(),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.SemiBold,color=speakerColor)
                             }
+                            Spacer(Modifier.height(8.dp))
+                            Text(group.text,style=MaterialTheme.typography.bodyMedium,color=contentColor)
 
                             val overlapSegments = group.segments.filter {
                                 it.overlap == true
@@ -546,17 +449,18 @@ fun TranscriptMessages(
                             onDismissRequest = {
                                 menuExpanded = false
                                 choosingPart = false
-                                selectedPart = null
+                                selectedPartId = null
                             },
                             modifier = Modifier.heightIn(max = 360.dp)
                         ) {
 
                             if (
                                 group.segments.size > 1 &&
-                                !choosingPart
+                                !choosingPart && selectedPart == null
                             ) {
 
                                 DropdownMenuItem(
+                                    enabled = editingEnabled,
                                     text = { Text("Сменить участника") },
                                     onClick = {
                                         menuExpanded = false
@@ -565,6 +469,7 @@ fun TranscriptMessages(
                                 )
 
                                 DropdownMenuItem(
+                                    enabled = editingEnabled,
                                     text = { Text("Разъединить сообщение") },
                                     onClick = {
                                         menuExpanded = false
@@ -573,16 +478,29 @@ fun TranscriptMessages(
                                 )
 
                                 DropdownMenuItem(
-                                    text = { Text("Выбрать отдельный фрагмент") },
+                                    enabled = editingEnabled,
+                                    text = { Text("Редактировать фрагмент") },
                                     onClick = {
                                         choosingPart = true
-                                        selectedPart = null
+                                        selectedPartId = null
                                     }
                                 )
+
+                                if (group.id in restorableStarts) {
+                                    DropdownMenuItem(
+                                        enabled = editingEnabled,
+                                        text = { Text("Объединить с предыдущим") },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onRestoreAutoMerge(group.id)
+                                        }
+                                    )
+                                }
 
                                 HorizontalDivider()
 
                                 DropdownMenuItem(
+                                    enabled = editingEnabled,
                                     text = {
                                         Text(
                                             text = "Удалить",
@@ -628,13 +546,14 @@ fun TranscriptMessages(
                                         group.segments.forEach { part ->
 
                                             DropdownMenuItem(
+                                                enabled = editingEnabled,
                                                 text = {
 
                                                     Column {
 
                                                         if (part.startMs != null) {
                                                             Text(
-                                                                text = formatSegmentTime(part.startMs),
+                                                                text = "${formatSegmentTime(part.startMs)}–${part.endMs?.let(::formatSegmentTime) ?: "—"}",
                                                                 style = MaterialTheme.typography.labelSmall
                                                             )
                                                         }
@@ -648,7 +567,7 @@ fun TranscriptMessages(
                                                 },
 
                                                 onClick = {
-                                                    selectedPart = part
+                                                    selectedPartId = part.id
                                                 }
                                             )
                                         }
@@ -666,7 +585,7 @@ fun TranscriptMessages(
                                             .fillMaxWidth()
                                             .height(40.dp)
                                             .clickable {
-                                                selectedPart = null
+                                                selectedPartId = null
                                                 choosingPart = true
                                             }
                                             .padding(horizontal = 16.dp),
@@ -698,7 +617,7 @@ fun TranscriptMessages(
 
                                         Text(
                                             text = if (target.startMs != null) {
-                                                "${formatSegmentTime(target.startMs)} · ${target.text}"
+                                                "${formatSegmentTime(target.startMs)}–${target.endMs?.let(::formatSegmentTime) ?: "—"} · ${target.text}"
                                             } else {
                                                 target.text
                                             },
@@ -712,21 +631,22 @@ fun TranscriptMessages(
                                 }
 
                                 DropdownMenuItem(
+                                    enabled = editingEnabled,
                                     text = { Text("Изменить текст") },
                                     onClick = {
                                         menuExpanded = false
-                                        selectedPart = null
+                                        selectedPartId = null
 
-                                        editRequest =
-                                            TranscriptEditRequest.TextEdit(target)
+                                        onRequestTextEdit(target)
                                     }
                                 )
 
                                 DropdownMenuItem(
+                                    enabled = editingEnabled,
                                     text = { Text("Сменить участника") },
                                     onClick = {
                                         menuExpanded = false
-                                        selectedPart = null
+                                        selectedPartId = null
 
                                         editRequest =
                                             TranscriptEditRequest.SpeakerChange(target)
@@ -736,13 +656,14 @@ fun TranscriptMessages(
                                 target.speakerId?.let { speakerId ->
 
                                     DropdownMenuItem(
+                                        enabled = editingEnabled,
                                         text = {
                                             Text("Переименовать участника")
                                         },
 
                                         onClick = {
                                             menuExpanded = false
-                                            selectedPart = null
+                                            selectedPartId = null
 
                                             editRequest =
                                                 TranscriptEditRequest.SpeakerRename(speakerId)
@@ -752,9 +673,10 @@ fun TranscriptMessages(
 
                                 if (
                                     group.segments.size == 1 &&
-                                    segment.id in splitBeforeSegmentIds
+                                    segment.id in restorableStarts
                                 ) {
                                     DropdownMenuItem(
+                                        enabled = editingEnabled,
                                         text = {
                                             Text("Объединить с предыдущим")
                                         },
@@ -768,6 +690,7 @@ fun TranscriptMessages(
                                 HorizontalDivider()
 
                                 DropdownMenuItem(
+                                    enabled = editingEnabled,
                                     text = {
                                         Text(
                                             text = "Удалить",
@@ -777,7 +700,7 @@ fun TranscriptMessages(
 
                                     onClick = {
                                         menuExpanded = false
-                                        selectedPart = null
+                                        selectedPartId = null
                                         deleteRequest = target
                                     }
                                 )
@@ -785,6 +708,7 @@ fun TranscriptMessages(
                         }
                     }
                 }
+                if(!isActive) HorizontalDivider(color=ArchiveColors.Divider,modifier=Modifier.padding(top=8.dp))
             }
         }
     }
@@ -797,9 +721,9 @@ fun TranscriptMessages(
             onDismiss = {
                 editRequest = null
             },
-            onTextSave = onEditText,
             onSpeakerChange = onChangeSpeaker,
-            onSpeakerRename = onRenameSpeaker
+            onSpeakerRename = onRenameSpeaker,
+            enabled = editingEnabled
         )
     }
 
@@ -820,6 +744,7 @@ fun TranscriptMessages(
             },
             confirmButton = {
                 TextButton(
+                    enabled = editingEnabled,
                     onClick = {
                         onDeleteSegment(segment.id)
                         deleteRequest = null
@@ -848,6 +773,7 @@ fun TranscriptMessages(
             group = group,
             speakerLabels = speakerLabels,
             onConfirm = onChangeGroupSpeaker,
+            enabled = editingEnabled,
             onDismiss = {
                 groupSpeakerRequest = null
             }
@@ -858,6 +784,7 @@ fun TranscriptMessages(
         GroupDeleteDialog(
             group = group,
             onConfirm = onDeleteGroup,
+            enabled = editingEnabled,
             onDismiss = {
                 groupDeleteRequest = null
             }
@@ -1001,80 +928,6 @@ private suspend fun LazyListState.followTranscriptEdge(
                 easing = FastOutSlowInEasing
             )
         )
-    }
-}
-
-private fun calculateBubbleWidth(
-    text: String,
-    maxBubbleWidth: Dp,
-    textMeasurer: TextMeasurer,
-    textStyle: TextStyle,
-    density: Density
-): Dp? {
-
-    val paddingPx = with(density) {
-        24.dp.roundToPx()
-    }
-
-    val safetyPx = with(density) {
-        3.dp.roundToPx()
-    }
-
-    val maxBubblePx = with(density) {
-        maxBubbleWidth.roundToPx()
-    }
-
-    val maxTextWidth = (
-        maxBubblePx - paddingPx
-    ).coerceAtLeast(1)
-
-    val original = textMeasurer.measure(
-        text = text,
-        style = textStyle,
-        constraints = Constraints(
-            maxWidth = maxTextWidth
-        )
-    )
-
-    // Однострочные сообщения не изменяем.
-    if (original.lineCount <= 1 || original.hasVisualOverflow) {
-        return null
-    }
-
-    var selectedWidth = maxTextWidth
-
-    // Сужаем максимум на 30%.
-    // Шаг составляет 5% от доступной ширины.
-    for (percent in 95 downTo 70 step 5) {
-
-        val candidate = (
-            maxTextWidth * percent / 100f
-        ).roundToInt().coerceAtLeast(1)
-
-        val layout = textMeasurer.measure(
-            text = text,
-            style = textStyle,
-            constraints = Constraints(
-                maxWidth = candidate
-            )
-        )
-
-        // Берём более узкую ширину только
-        // при сохранении количества строк.
-        if (
-            layout.lineCount == original.lineCount &&
-            !layout.hasVisualOverflow
-        ) {
-            selectedWidth = candidate
-        }
-    }
-
-    val resultPx = (
-        selectedWidth + paddingPx + safetyPx
-    ).coerceAtMost(maxBubblePx)
-
-    return with(density) {
-        resultPx.toDp()
     }
 }
 

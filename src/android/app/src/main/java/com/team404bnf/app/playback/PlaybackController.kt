@@ -34,6 +34,10 @@ data class PlaybackUiState(
 
 class PlaybackController(context: Context) {
 
+    private var fullItem: MediaItem? = null
+    private var fullDurationMs = 0L
+    private var previewRange: SegmentPlaybackRange? = null
+
     private val player = ExoPlayer.Builder(
         context.applicationContext
     ).build()
@@ -68,6 +72,12 @@ class PlaybackController(context: Context) {
                         )
                     }
                 }
+
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (previewRange != null && playbackState == Player.STATE_ENDED) {
+                        player.pause()
+                    }
+                }
             }
         )
 
@@ -81,19 +91,19 @@ class PlaybackController(context: Context) {
     }
 
     fun load(file: File) {
+        previewRange = null
+        fullDurationMs = 0L
+        fullItem = MediaItem.fromUri(Uri.fromFile(file))
         _state.value = PlaybackUiState()
 
-        player.setMediaItem(
-            MediaItem.fromUri(
-                Uri.fromFile(file)
-            )
-        )
+        player.setMediaItem(requireNotNull(fullItem))
 
         player.prepare()
         updateState()
     }
 
     fun play() {
+        restoreFullItem(absolutePosition())
         if (player.playbackState == Player.STATE_ENDED) {
             player.seekTo(0)
         }
@@ -110,11 +120,35 @@ class PlaybackController(context: Context) {
 
     fun pause() {
         player.pause()
+        restoreFullItem(absolutePosition())
         updateState()
     }
 
+    fun playRange(startMs: Long?, endMs: Long?) {
+        pause() // Cancel a previous preview, including its clipping configuration.
+        val item = fullItem ?: return
+        val range = SegmentPlaybackRange.create(startMs, endMs, fullDurationMs) ?: return
+        previewRange = range
+        player.setMediaItem(item.buildUpon()
+            .setClippingConfiguration(range.clippingConfiguration()).build(), 0L)
+        player.prepare()
+        player.play()
+        updateState()
+    }
+
+    private fun absolutePosition(): Long =
+        previewRange?.absolutePosition(player.currentPosition) ?: player.currentPosition.coerceAtLeast(0L)
+
+    /** Switching back uses the same ExoPlayer and preserves the absolute recording position. */
+    private fun restoreFullItem(positionMs: Long) {
+        if (previewRange == null) return
+        previewRange = null
+        player.setMediaItem(requireNotNull(fullItem), positionMs)
+        player.prepare()
+    }
+
     fun seekTo(positionMs: Long) {
-        val duration = player.duration
+        val duration = fullDurationMs
 
         val safePosition = if (
             duration == C.TIME_UNSET || duration <= 0
@@ -124,7 +158,8 @@ class PlaybackController(context: Context) {
             positionMs.coerceIn(0, duration)
         }
 
-        player.seekTo(safePosition)
+        if (previewRange != null) restoreFullItem(safePosition)
+        else player.seekTo(safePosition)
         updateState()
     }
 
@@ -140,20 +175,15 @@ class PlaybackController(context: Context) {
     private fun updateState() {
         val duration = player.duration
 
-        val safeDuration = if (
-            duration == C.TIME_UNSET || duration < 0
-        ) {
-            0L
-        } else {
-            duration
+        if (previewRange == null && duration != C.TIME_UNSET && duration >= 0L) {
+            fullDurationMs = duration
         }
 
         _state.update {
             it.copy(
-                positionMs = player.currentPosition
-                    .coerceAtLeast(0L),
+                positionMs = absolutePosition(),
 
-                durationMs = safeDuration,
+                durationMs = fullDurationMs,
 
                 isPlaying = player.isPlaying,
 

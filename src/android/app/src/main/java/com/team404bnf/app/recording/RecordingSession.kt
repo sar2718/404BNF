@@ -17,6 +17,7 @@ enum class RecordingStatus {
 data class RecorderUiState(
     val status: RecordingStatus = RecordingStatus.IDLE,
     val durationMs: Long = 0,
+    val savedRecordingId: String? = null,
     val message: String? = null
 )
 

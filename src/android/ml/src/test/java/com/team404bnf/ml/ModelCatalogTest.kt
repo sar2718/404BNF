@@ -25,4 +25,12 @@ class ModelCatalogTest {
         assertTrue(ModelCatalog.assets.all { ".." !in it.relativePath && !it.relativePath.startsWith("/") })
         assertEquals(ModelCatalog.assets.size, ModelCatalog.assets.map { it.relativePath }.toSet().size)
     }
+    @Test fun `offline package includes every required recognition and diarization dependency`() {
+        val pack = ModelCatalog.packages.single { it.id == ModelCatalog.DEFAULT_PACKAGE_ID }
+        assertEquals(ModelCatalog.allModels.toSet(), pack.models)
+        assertEquals(ModelCatalog.assets.toSet(), ModelCatalog.assets.filter { it.model in pack.models }.toSet())
+        assertTrue(pack.approximateDownloadBytes > 0)
+        assertEquals(ModelCatalog.packages.size, ModelCatalog.packages.map { it.id }.toSet().size)
+    }
+
 }

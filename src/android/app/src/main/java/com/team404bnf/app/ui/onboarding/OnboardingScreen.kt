@@ -1,6 +1,12 @@
 package com.team404bnf.app.ui.onboarding
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.style.TextAlign
+import com.team404bnf.app.ui.components.*
+import com.team404bnf.app.ui.theme.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -120,98 +126,33 @@ fun OnboardingScreen(
         )
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
-
-            Spacer(Modifier.height(48.dp))
-
-            Text(
-                text = "404BNF",
-                style = MaterialTheme.typography.displayMedium
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                text = "Добро пожаловать!",
-                style = MaterialTheme.typography.headlineSmall
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                text = "Записывайте разговоры, сохраняйте аудио " +
-                        "и работайте с расшифровками в удобном формате.",
-                style = MaterialTheme.typography.bodyLarge
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            Text(
-                text = "Перед началом ознакомьтесь с документами:",
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            TextButton(
-                onClick = { openedDocument = "terms" }
-            ) {
-                Text("Пользовательское соглашение")
-            }
-
-            TextButton(
-                onClick = { openedDocument = "privacy" }
-            ) {
-                Text("Политика конфиденциальности")
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Checkbox(
-                    checked = agreed,
-                    onCheckedChange = { agreed = it }
-                )
-
-                Text(
-                    text = "Принимаю Пользовательское соглашение " +
-                            "и ознакомлен(а) с Политикой конфиденциальности",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = onAccept,
-                enabled = agreed && !saving,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                Text(
-                    if (saving) "Сохранение..." else "Продолжить"
-                )
-            }
-
-            if (errorMessage != null) {
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    text = errorMessage,
-                    color = MaterialTheme.colorScheme.error
-                )
+    Scaffold(containerColor=ArchiveColors.Background) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding),contentAlignment=Alignment.Center) {
+            Column(Modifier.widthIn(max=520.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=28.dp,vertical=32.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                Text("404BNF",style=MaterialTheme.typography.displayMedium,color=ArchiveColors.Gold)
+                Spacer(Modifier.height(20.dp))
+                Text("Ваши разговоры.\nВаши данные.",style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center)
+                Spacer(Modifier.height(32.dp))
+                Canvas(Modifier.fillMaxWidth().height(220.dp)) {
+                    val heights=listOf(.18f,.62f,.95f,.45f,.72f,.18f)
+                    val gap=size.width/7
+                    heights.forEachIndexed {i,h ->
+                        val x=gap*(i+1);val height=size.height*h
+                        drawLine(ArchiveColors.Red,Offset(x,(size.height-height)/2),Offset(x,(size.height+height)/2),24.dp.toPx(),StrokeCap.Round)
+                    }
+                }
+                Spacer(Modifier.height(30.dp))
+                Text("Записывайте разговоры, получайте расшифровки и разделяйте реплики по говорящим. Аудиозаписи сохраняются на устройстве.",style=MaterialTheme.typography.titleMedium,textAlign=TextAlign.Center,color=ArchiveColors.Muted)
+                Spacer(Modifier.height(24.dp))
+                TextButton(onClick={openedDocument="terms"}) {Text("Пользовательское соглашение")}
+                TextButton(onClick={openedDocument="privacy"}) {Text("Политика конфиденциальности")}
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=agreed,onCheckedChange={agreed=it},enabled=!saving)
+                    Text("Принимаю соглашение и подтверждаю ознакомление с политикой конфиденциальности",style=MaterialTheme.typography.bodySmall,color=ArchiveColors.Muted)
+                }
+                Spacer(Modifier.height(16.dp))
+                ArchiveButton(if(saving) "Сохранение…" else "Продолжить",onAccept,Modifier.fillMaxWidth(),accent=true,enabled=agreed && !saving)
+                errorMessage?.let {Text(it,color=ArchiveColors.Red,modifier=Modifier.padding(top=12.dp))}
             }
         }
     }

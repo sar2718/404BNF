@@ -654,4 +654,126 @@ class TranscriptUserEditsTest {
         assertEquals("seg2 and seg3 should auto-merge when both are SPEAKER_01",
             seg2Group, seg3Group)
     }
+
+    private fun groupedTranscript(): ParsedTranscript = TranscriptJsonParser.parse("""
+        {
+            "id": "group_editor", "duration": 30.0,
+            "segments": [
+                {"id":"a", "start":10.0, "end":15.0, "speaker_id":"S1", "text":"Первый"},
+                {"id":"b", "start":15.2, "end":21.7, "speaker_id":"S1", "text":"Второй"},
+                {"id":"c", "start":21.7, "end":28.0, "speaker_id":"S1", "text":"Третий"}
+            ],
+            "speaker_labels": {"S1":"Первый говорящий", "S2":"Второй говорящий"}
+        }
+    """.trimIndent())
+
+    @Test
+    fun editingInnerFragmentDoesNotChangeItsNeighboursOrOriginal() {
+        val original = groupedTranscript()
+        val originalSegments = original.segments.toList()
+        val edits = JsonObject()
+        TranscriptUserEdits.updateSegment(edits, original, "b", "  Исправленный второй  ", "S1")
+        TranscriptUserEdits.clean(edits, original)
+        val reloaded = TranscriptUserEdits.apply(original, edits.toString())
+        assertEquals(originalSegments, original.segments)
+        assertEquals(original.segments[0], reloaded.segments[0])
+        assertEquals(original.segments[2], reloaded.segments[2])
+        assertEquals(original.segments[1].copy(text = "Исправленный второй"), reloaded.segments[1])
+        assertTrue(TranscriptUserEdits.hasUserEdits(edits, original))
+    }
+
+    @Test
+    fun splittingEditedGroupAfterReloadPreservesAllFragmentData() {
+        val original = groupedTranscript()
+        val edits = JsonObject()
+        TranscriptUserEdits.updateSegment(edits, original, "b", "Исправление внутри группы", "S1")
+        val positions = original.segments.mapIndexed { i, s -> s.id to i }.toMap()
+        val edited = TranscriptUserEdits.apply(original, edits.toString())
+        assertEquals(1, groupTranscriptSegments(edited.segments, positions).size)
+        edits.add("splitBeforeSegmentIds", JsonArray().apply { add("b"); add("c") })
+        TranscriptUserEdits.clean(edits, original)
+        val persisted = JsonParser.parseString(edits.toString()).asJsonObject
+        val reloaded = TranscriptUserEdits.apply(original, persisted.toString())
+        val splits = persisted.getAsJsonArray("splitBeforeSegmentIds").map { it.asString }.toSet()
+        val separated = groupTranscriptSegments(reloaded.segments, positions, splitBeforeSegmentIds = splits)
+        assertEquals(3, separated.size)
+        assertEquals(edited.segments, separated.flatMap { it.segments })
+        assertEquals(original.segments.map { Triple(it.id, it.startMs, it.endMs) },
+            reloaded.segments.map { Triple(it.id, it.startMs, it.endMs) })
+        assertTrue(TranscriptUserEdits.hasUserEdits(persisted, original))
+    }
+
+    @Test
+    fun changingSpeakerAndRegroupingPreservesCorrectedText() {
+        val original = groupedTranscript()
+        val edits = JsonObject()
+        val positions = original.segments.mapIndexed { i, s -> s.id to i }.toMap()
+        TranscriptUserEdits.updateSegment(edits, original, "b", "Исправленный текст", "S2")
+        val changed = TranscriptUserEdits.apply(original, edits.toString())
+        assertEquals(3, groupTranscriptSegments(changed.segments, positions).size)
+        TranscriptUserEdits.updateSegment(edits, original, "b", changed.segments[1].text, "S1")
+        TranscriptUserEdits.clean(edits, original)
+        val restoredSpeaker = TranscriptUserEdits.apply(original, edits.toString())
+        assertEquals(1, groupTranscriptSegments(restoredSpeaker.segments, positions).size)
+        assertEquals("Исправленный текст", restoredSpeaker.segments[1].text)
+        assertEquals(original.segments[1].startMs, restoredSpeaker.segments[1].startMs)
+        assertEquals(original.segments[1].endMs, restoredSpeaker.segments[1].endMs)
+    }
+
+    @Test
+    fun deletingAndRestoringEditedFragmentsKeepsTheirEdits() {
+        val original = groupedTranscript()
+        val edits = JsonObject()
+        TranscriptUserEdits.updateSegment(edits, original, "b", "Сохранённая правка", "S2")
+        val beforeDelete = TranscriptUserEdits.apply(original, edits.toString())
+        edits.add("hiddenSegments", JsonArray().apply { add("a"); add("b"); add("c") })
+        assertTrue(TranscriptUserEdits.apply(original, edits.toString()).segments.isEmpty())
+        edits.add("hiddenSegments", JsonArray().apply { add("a"); add("c") })
+        assertEquals(listOf(beforeDelete.segments[1]),
+            TranscriptUserEdits.apply(original, edits.toString()).segments)
+        edits.remove("hiddenSegments")
+        assertEquals(beforeDelete, TranscriptUserEdits.apply(original, edits.toString()))
+    }
+
+    @Test
+    fun resetRemovesAllSupportedEditsAndReturnsOriginalOrderAndTiming() {
+        val original = groupedTranscript()
+        val edits = JsonObject()
+        TranscriptUserEdits.updateSegment(edits, original, "b", "Правка", "S2")
+        TranscriptUserEdits.section(edits, "names").addProperty("S1", "Новое имя")
+        edits.add("hiddenSegments", JsonArray().apply { add("a") })
+        edits.add("splitBeforeSegmentIds", JsonArray().apply { add("c") })
+        assertTrue(TranscriptUserEdits.hasUserEdits(edits, original))
+        // resetAllUserEdits clears these overlay keys, leaving the saved raw transcript intact.
+        edits.keySet().toList().forEach(edits::remove)
+        val persisted = JsonParser.parseString(edits.toString()).asJsonObject
+        assertFalse(TranscriptUserEdits.hasUserEdits(persisted, original))
+        assertEquals(original, TranscriptUserEdits.apply(original, persisted.toString()))
+    }
+
+    @Test
+    fun invalidCombinedSubmissionCannotApplyOnlyTheText() {
+        val original = groupedTranscript()
+        val edits = JsonObject()
+        TranscriptUserEdits.updateSegment(edits, original, "a", "Ранее сохранено", "S1")
+        val before = edits.deepCopy()
+        try {
+            TranscriptUserEdits.updateSegment(edits, original, "b", "Новый текст", "missing-speaker")
+            org.junit.Assert.fail("Unknown speaker must reject the complete submission")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(before, edits)
+        }
+    }
+
+    @Test
+    fun savingUnchangedTextAndSpeakerDoesNotExposeResetAction() {
+        val original = groupedTranscript()
+        val edits = JsonObject()
+        val segment = original.segments[1]
+        TranscriptUserEdits.updateSegment(edits, original, segment.id, segment.text, segment.speakerId)
+        TranscriptUserEdits.clean(edits, original)
+        assertEquals("{}", edits.toString())
+        assertFalse(TranscriptUserEdits.hasUserEdits(edits, original))
+    }
+
 }

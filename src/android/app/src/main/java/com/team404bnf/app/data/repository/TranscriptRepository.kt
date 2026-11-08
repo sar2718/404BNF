@@ -1,8 +1,6 @@
 package com.team404bnf.app.data.repository
 
 import androidx.room.withTransaction
-import com.google.gson.JsonArray
-import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
@@ -46,27 +44,6 @@ class TranscriptRepository(
 
     private val dao = database.transcriptSnapshotDao()
 
-    fun observeEditable(
-        recordingId: String
-    ): Flow<ParsedTranscript?> {
-
-        return dao.observeSnapshot(recordingId)
-            .map { snapshot ->
-
-                snapshot?.let {
-                    val original = TranscriptJsonParser.parse(
-                        it.rawJson
-                    )
-
-                    TranscriptUserEdits.apply(
-                        original,
-                        it.userEditsJson
-                    )
-                }
-            }
-            .flowOn(Dispatchers.Default)
-    }
-
     fun observeEditableWithOrder(
         recordingId: String
     ): Flow<EditableTranscriptWithOrder?> {
@@ -90,26 +67,12 @@ class TranscriptRepository(
                         it.userEditsJson
                     ).asJsonObject
 
-                    val splitBeforeIds = editsObject
-                        .get("splitBeforeSegmentIds")
-                        ?.takeIf { element -> element.isJsonArray }
-                        ?.asJsonArray
-                        ?.mapNotNull { element ->
-                            if (
-                                element.isJsonPrimitive &&
-                                element.asJsonPrimitive.isString
-                            ) {
-                                element.asString
-                            } else {
-                                null
-                            }
-                        }
-                        ?.toSet()
-                        ?: emptySet()
+                    TranscriptUserEdits.clean(editsObject, original)
+                    val splitBeforeIds = TranscriptUserEdits.splitBeforeIds(editsObject)
 
                     val editable = TranscriptUserEdits.apply(
                         original,
-                        it.userEditsJson
+                        editsObject.toString()
                     )
 
                     EditableTranscriptWithOrder(
@@ -143,31 +106,7 @@ class TranscriptRepository(
 
                     TranscriptUserEdits.clean(edits, original)
 
-                    val hiddenIds = edits
-                        .get("hiddenSegments")
-                        ?.takeIf { it.isJsonArray }
-                        ?.asJsonArray
-                        ?.mapNotNull { element ->
-                            if (
-                                element.isJsonPrimitive &&
-                                element.asJsonPrimitive.isString
-                            ) {
-                                element.asString
-                            } else {
-                                null
-                            }
-                        }
-                        ?.toSet()
-                        ?: emptySet()
-
-                    val deletedSegments =
-                        if (hiddenIds.isEmpty()) {
-                            emptyList()
-                        } else {
-                            original.segments.filter {
-                                it.id in hiddenIds
-                            }
-                        }
+                    val deletedSegments = TranscriptUserEdits.deletedSegments(edits, original)
 
                     val hasEdits = TranscriptUserEdits.hasUserEdits(
                         edits,
@@ -216,72 +155,20 @@ class TranscriptRepository(
         }
     }
 
-    suspend fun updateSegmentText(
+    suspend fun updateSegmentEdits(
         recordingId: String,
         segmentId: String,
-        text: String
-    ) {
-        val normalized = text.trim()
-
-        require(normalized.isNotEmpty()) {
-            "Текст реплики не может быть пустым"
-        }
-
-        require(normalized.length <= 5000) {
-            "Текст слишком длинный"
-        }
-
-        updateEdits(recordingId) { edits, original ->
-
-            val segment = original.segments
-                .firstOrNull { it.id == segmentId }
-                ?: error("Реплика не найдена")
-
-            val texts = TranscriptUserEdits.section(
-                edits,
-                "texts"
-            )
-
-            if (normalized == segment.text) {
-                texts.remove(segmentId)
-            } else {
-                texts.addProperty(segmentId, normalized)
-            }
-        }
-    }
-
-    suspend fun updateSegmentSpeaker(
-        recordingId: String,
-        segmentId: String,
+        text: String,
         speakerId: String?
     ) {
         updateEdits(recordingId) { edits, original ->
+            TranscriptUserEdits.updateSegment(edits, original, segmentId, text, speakerId)
+        }
+    }
 
-            val segment = original.segments
-                .firstOrNull { it.id == segmentId }
-                ?: error("Реплика не найдена")
-
-            val knownSpeakers = (
-                original.speakerLabels.keys +
-                    original.segments.mapNotNull { it.speakerId }
-            ).toSet()
-
-            require(speakerId == null || speakerId in knownSpeakers) {
-                "Участник не найден"
-            }
-
-            val speakers = TranscriptUserEdits.section(
-                edits,
-                "speakers"
-            )
-
-            if (speakerId == segment.speakerId) {
-                speakers.remove(segmentId)
-            } else if (speakerId == null) {
-                speakers.add(segmentId, JsonNull.INSTANCE)
-            } else {
-                speakers.addProperty(segmentId, speakerId)
-            }
+    suspend fun updateSegmentSpeaker(recordingId: String, segmentId: String, speakerId: String?) {
+        updateEdits(recordingId) { edits, original ->
+            TranscriptUserEdits.changeSpeakers(edits, original, listOf(segmentId), speakerId)
         }
     }
 
@@ -321,242 +208,34 @@ class TranscriptRepository(
         }
     }
 
-    suspend fun deleteSegment(
-        recordingId: String,
-        segmentId: String
-    ) {
+    suspend fun deleteSegment(recordingId: String, segmentId: String) {
         updateEdits(recordingId) { edits, original ->
-
-            require(original.segments.any { it.id == segmentId }) {
-                "Реплика не найдена"
-            }
-
-            val hidden = edits.getAsJsonArray("hiddenSegments")
-                ?: JsonArray().also {
-                    edits.add("hiddenSegments", it)
-                }
-
-            if (hidden.none { it.asString == segmentId }) {
-                hidden.add(segmentId)
-            }
+            TranscriptUserEdits.hideSegments(edits, original, listOf(segmentId))
         }
     }
 
-    suspend fun restoreDeletedSegment(
-        recordingId: String,
-        segmentId: String
-    ) {
-        updateEdits(recordingId) { edits, original ->
-
-            require(
-                original.segments.any { it.id == segmentId }
-            ) {
-                "Реплика не найдена"
-            }
-
-            val existing = edits.get("hiddenSegments")
-
-            if (existing != null && existing.isJsonArray) {
-
-                val remaining = JsonArray()
-
-                existing.asJsonArray.forEach { element ->
-
-                    val isTarget =
-                        element.isJsonPrimitive &&
-                            element.asJsonPrimitive.isString &&
-                            element.asString == segmentId
-
-                    if (!isTarget) {
-                        remaining.add(element)
-                    }
-                }
-
-                if (remaining.size() == 0) {
-                    edits.remove("hiddenSegments")
-                } else {
-                    edits.add("hiddenSegments", remaining)
-                }
-            }
-        }
+    suspend fun restoreDeletedSegment(recordingId: String, segmentId: String) {
+        updateEdits(recordingId) { edits, original -> TranscriptUserEdits.restoreSegment(edits, original, segmentId) }
     }
 
-    suspend fun resetAllUserEdits(
-        recordingId: String
-    ) {
-        updateEdits(recordingId) { edits, _ ->
-
-            edits.keySet()
-                .toList()
-                .forEach { key ->
-                    edits.remove(key)
-                }
-        }
+    suspend fun resetAllUserEdits(recordingId: String) {
+        updateEdits(recordingId) { edits, _ -> TranscriptUserEdits.reset(edits) }
     }
 
-    suspend fun changeGroupSpeaker(
-        recordingId: String,
-        segmentIds: List<String>,
-        speakerId: String?
-    ) {
-        updateEdits(recordingId) { edits, original ->
-
-            validateOriginalGroup(segmentIds, original)
-
-            val knownSpeakers = (
-                original.speakerLabels.keys +
-                    original.segments.mapNotNull {
-                        it.speakerId
-                    }
-            ).toSet()
-
-            require(
-                speakerId == null ||
-                    speakerId in knownSpeakers
-            ) {
-                "Участник не найден"
-            }
-
-            val speakers = TranscriptUserEdits.section(
-                edits,
-                "speakers"
-            )
-
-            val originalById = original.segments
-                .associateBy { it.id }
-
-            segmentIds.forEach { id ->
-
-                val originalSpeaker = originalById[id]?.speakerId
-
-                when {
-                    speakerId == originalSpeaker ->
-                        speakers.remove(id)
-
-                    speakerId == null ->
-                        speakers.add(id, JsonNull.INSTANCE)
-
-                    else ->
-                        speakers.addProperty(id, speakerId)
-                }
-            }
-
-            if (speakers.size() == 0) {
-                edits.remove("speakers")
-            }
-        }
+    suspend fun changeGroupSpeaker(recordingId: String, segmentIds: List<String>, speakerId: String?) {
+        updateEdits(recordingId) { edits, original -> TranscriptUserEdits.changeGroupSpeaker(edits, original, segmentIds, speakerId) }
     }
 
-    suspend fun deleteGroup(
-        recordingId: String,
-        segmentIds: List<String>
-    ) {
-        updateEdits(recordingId) { edits, original ->
-
-            validateOriginalGroup(segmentIds, original)
-
-            val hidden = edits
-                .get("hiddenSegments")
-                ?.takeIf { it.isJsonArray }
-                ?.asJsonArray
-                ?: JsonArray()
-
-            val existingIds = hidden
-                .mapNotNull { element ->
-                    if (
-                        element.isJsonPrimitive &&
-                        element.asJsonPrimitive.isString
-                    ) {
-                        element.asString
-                    } else {
-                        null
-                    }
-                }
-                .toMutableSet()
-
-            segmentIds.forEach { id ->
-                if (existingIds.add(id)) {
-                    hidden.add(id)
-                }
-            }
-
-            edits.add("hiddenSegments", hidden)
-        }
+    suspend fun deleteGroup(recordingId: String, segmentIds: List<String>) {
+        updateEdits(recordingId) { edits, original -> TranscriptUserEdits.hideGroup(edits, original, segmentIds) }
     }
 
-    suspend fun splitGroup(
-        recordingId: String,
-        segmentIds: List<String>
-    ) {
-        updateEdits(recordingId) { edits, original ->
-
-            validateOriginalGroup(segmentIds, original)
-
-            val boundaries = edits
-                .get("splitBeforeSegmentIds")
-                ?.takeIf { it.isJsonArray }
-                ?.asJsonArray
-                ?: JsonArray()
-
-            val existingIds = boundaries
-                .mapNotNull { element ->
-                    if (
-                        element.isJsonPrimitive &&
-                        element.asJsonPrimitive.isString
-                    ) {
-                        element.asString
-                    } else {
-                        null
-                    }
-                }
-                .toMutableSet()
-
-            segmentIds.drop(1).forEach { id ->
-                if (existingIds.add(id)) {
-                    boundaries.add(id)
-                }
-            }
-
-            edits.add("splitBeforeSegmentIds", boundaries)
-        }
+    suspend fun splitGroup(recordingId: String, segmentIds: List<String>) {
+        updateEdits(recordingId) { edits, original -> TranscriptUserEdits.splitGroup(edits, original, segmentIds) }
     }
 
-    suspend fun allowAutoMergeBefore(
-        recordingId: String,
-        segmentId: String
-    ) {
-        updateEdits(recordingId) { edits, original ->
-
-            require(
-                original.segments.any { it.id == segmentId }
-            ) {
-                "Реплика не найдена"
-            }
-
-            val boundaries = edits
-                .get("splitBeforeSegmentIds")
-                ?.takeIf { it.isJsonArray }
-                ?.asJsonArray
-                ?: return@updateEdits
-
-            val remaining = JsonArray()
-
-            boundaries.forEach { element ->
-                if (
-                    !element.isJsonPrimitive ||
-                    !element.asJsonPrimitive.isString ||
-                    element.asString != segmentId
-                ) {
-                    remaining.add(element)
-                }
-            }
-
-            if (remaining.size() == 0) {
-                edits.remove("splitBeforeSegmentIds")
-            } else {
-                edits.add("splitBeforeSegmentIds", remaining)
-            }
-        }
+    suspend fun allowAutoMergeBefore(recordingId: String, segmentId: String) {
+        updateEdits(recordingId) { edits, original -> TranscriptUserEdits.restoreMerge(edits, original, segmentId) }
     }
 
     suspend fun getStoredTranscriptBytes(
@@ -667,6 +346,20 @@ class TranscriptRepository(
         return dao.observeExists(recordingId)
     }
 
+    suspend fun checkTxtExportOptions(recordingId: String): com.team404bnf.app.transcription.ExportOptions = withContext(Dispatchers.IO) {
+        val snapshot = dao.get(recordingId) ?: error("Расшифровка не найдена")
+        com.team404bnf.app.transcription.TranscriptTxtFormatter.checkExportOptions(
+            TranscriptJsonParser.parse(snapshot.rawJson), snapshot.userEditsJson)
+    }
+
+    /** Read one persisted snapshot for the selected version; exporting never updates Room. */
+    suspend fun getForTxtExport(recordingId: String, version: com.team404bnf.app.transcription.ExportVersion): ParsedTranscript? =
+        withContext(Dispatchers.IO) {
+            val snapshot = dao.get(recordingId) ?: return@withContext null
+            com.team404bnf.app.transcription.TranscriptTxtFormatter.selectVersion(
+                TranscriptJsonParser.parse(snapshot.rawJson), snapshot.userEditsJson, version)
+        }
+
     suspend fun checkExportOptions(
         recordingId: String
     ): com.team404bnf.app.transcription.ExportOptions = withContext(Dispatchers.IO) {
@@ -679,13 +372,6 @@ class TranscriptRepository(
             original = original,
             userEditsJson = snapshot.userEditsJson
         )
-    }
-
-    suspend fun validateAndCheckExportDifferences(
-        recordingId: String
-    ): Boolean = withContext(Dispatchers.IO) {
-        val options = checkExportOptions(recordingId)
-        options.showVersionSelection
     }
 
     suspend fun exportTranscriptJson(
@@ -701,47 +387,4 @@ class TranscriptRepository(
         )
     }
 
-    suspend fun hasExportableJsonDifferences(
-        recordingId: String
-    ): Boolean = withContext(Dispatchers.IO) {
-        val snapshot = dao.get(recordingId) ?: return@withContext false
-        val original = TranscriptJsonParser.parse(snapshot.rawJson)
-        com.team404bnf.app.transcription.TranscriptJsonExporter.hasExportableDifferences(
-            original = original,
-            userEditsJson = snapshot.userEditsJson
-        )
-    }
-
-    private fun validateOriginalGroup(
-        segmentIds: List<String>,
-        original: ParsedTranscript
-    ) {
-        require(
-            segmentIds.size >= 2 &&
-                segmentIds.distinct().size == segmentIds.size
-        ) {
-            "Некорректная группа реплик"
-        }
-
-        val positions = original.segments
-            .mapIndexed { index, segment ->
-                segment.id to index
-            }
-            .toMap()
-
-        val indices = segmentIds.map { id ->
-            positions[id]
-                ?: throw IllegalArgumentException(
-                    "Реплика не найдена"
-                )
-        }
-
-        require(
-            indices.zipWithNext().all { (first, second) ->
-                second == first + 1
-            }
-        ) {
-            "Фрагменты не являются соседними"
-        }
-    }
 }

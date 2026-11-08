@@ -9,7 +9,8 @@ internal fun GroupSpeakerDialog(
     group: TranscriptMessageGroup,
     speakerLabels: Map<String, String>,
     onConfirm: (List<String>, String?) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    enabled: Boolean = true
 ) {
     SpeakerPickerDialog(
         speakerLabels = speakerLabels,
@@ -20,7 +21,8 @@ internal fun GroupSpeakerDialog(
                 speakerId
             )
         },
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        enabled = enabled
     )
 }
 
@@ -28,7 +30,8 @@ internal fun GroupSpeakerDialog(
 internal fun GroupDeleteDialog(
     group: TranscriptMessageGroup,
     onConfirm: (List<String>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    enabled: Boolean = true
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -44,6 +47,7 @@ internal fun GroupDeleteDialog(
         },
         confirmButton = {
             TextButton(
+                enabled = enabled,
                 onClick = {
                     onConfirm(
                         group.segments.map { it.id }

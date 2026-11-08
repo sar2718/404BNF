@@ -117,3 +117,12 @@ internal fun findActiveTranscriptGroups(
 
     }.toSet()
 }
+
+/** A stored boundary is actionable only if removing it can join the visible neighbours. */
+internal fun restorableMergeStarts(
+    segments: List<TranscriptSegment>,
+    originalPositions: Map<String, Int>,
+    splitBeforeSegmentIds: Set<String>
+): Set<String> = groupTranscriptSegments(segments, originalPositions)
+    .flatMap { it.segments.drop(1).map { segment -> segment.id } }
+    .filterTo(mutableSetOf()) { it in splitBeforeSegmentIds }

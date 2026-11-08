@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.IBinder
 
 import com.team404bnf.app.MainActivity
+import com.team404bnf.app.models.RecognitionModels
 import com.team404bnf.app.data.db.AppDatabase
 import com.team404bnf.app.data.repository.RecordingRepository
 
@@ -197,10 +198,16 @@ class RecordingService : Service() {
                     relativePath = result.relativePath
                 )
 
+                // The file is closed and its row is committed before any model or queue work.
+                // Await enqueue while this FGS is alive; Compose never schedules the ML task.
+                val queued = RecognitionModels.get(applicationContext).requestTranscription(recordingId)
+
                 RecordingSession.update {
                     it.copy(
                         status = RecordingStatus.SAVED,
-                        message = "Аудиозапись сохранена"
+                        savedRecordingId = recordingId,
+                        message = if(queued) "Аудиозапись сохранена" else
+                            "Аудио сохранено. Для расшифровки подготовьте офлайн-модели."
                     )
                 }
 

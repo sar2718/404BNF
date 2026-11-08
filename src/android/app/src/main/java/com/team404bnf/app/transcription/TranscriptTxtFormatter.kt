@@ -5,6 +5,32 @@ import java.util.Locale
 
 object TranscriptTxtFormatter {
 
+    fun selectVersion(original: ParsedTranscript, userEditsJson: String, version: ExportVersion): ParsedTranscript {
+        require(original.segments.isNotEmpty()) { "Исходная расшифровка пуста" }
+        return when(version) {
+            // Derive the same fallback speaker labels for both versions; these are not user edits.
+            ExportVersion.ORIGINAL -> TranscriptUserEdits.apply(original, "{}")
+            ExportVersion.CORRECTED -> TranscriptUserEdits.apply(original, userEditsJson)
+        }
+    }
+
+    /** TXT supports unknown speakers/times, unlike strict JSON; compare what TXT actually includes. */
+    fun checkExportOptions(original: ParsedTranscript, userEditsJson: String): ExportOptions {
+        require(original.segments.isNotEmpty()) { "Исходная расшифровка пуста" }
+        val corrected = try { selectVersion(original, userEditsJson, ExportVersion.CORRECTED) }
+        catch (_: Exception) { return ExportOptions(originalValid = true, correctedValid = false, hasDifferences = false) }
+        val source = selectVersion(original, "{}", ExportVersion.ORIGINAL)
+        val differs = source.segments.size != corrected.segments.size ||
+            source.segments.zip(corrected.segments).any { (before, after) ->
+                before.text.trim() != after.text.trim() || before.startMs != after.startMs || before.endMs != after.endMs ||
+                    speakerName(before, source.speakerLabels) != speakerName(after, corrected.speakerLabels)
+            }
+        return ExportOptions(originalValid = true, correctedValid = true, hasDifferences = differs)
+    }
+
+    private fun speakerName(segment: TranscriptSegment, labels: Map<String, String>): String =
+        segment.speakerId?.let { labels[it] ?: segment.speakerLabel ?: it } ?: "Говорящий не указан"
+
     fun writeTo(
         writer: Writer,
         title: String,
@@ -16,12 +42,7 @@ object TranscriptTxtFormatter {
 
         segments.forEach { segment ->
 
-            val speakerName =
-                segment.speakerId?.let { id ->
-                    speakerLabels[id]
-                        ?: segment.speakerLabel
-                        ?: id
-                } ?: "Говорящий не указан"
+            val speakerName = speakerName(segment, speakerLabels)
 
             writer.write(
                 formatEntry(
@@ -73,7 +94,7 @@ object TranscriptTxtFormatter {
         val minutes = (seconds % 3600) / 60
         val remaining = seconds % 60
 
-        return if (hours > 0) {
+        val time = if (hours > 0) {
             String.format(
                 Locale.ROOT,
                 "%02d:%02d:%02d",
@@ -89,5 +110,6 @@ object TranscriptTxtFormatter {
                 remaining
             )
         }
+        return if (milliseconds % 1000 == 0L) time else time + String.format(Locale.ROOT, ".%03d", milliseconds % 1000)
     }
 }

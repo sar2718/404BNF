@@ -42,7 +42,7 @@ fun TranscriptRecoveryDialog(
 
                 if (segments.isEmpty()) {
 
-                    Text("Удалённых сообщений нет.")
+                    Text("Нет удалённых реплик")
 
                 } else {
 

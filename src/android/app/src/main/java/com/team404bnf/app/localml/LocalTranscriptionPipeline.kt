@@ -13,7 +13,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
-import java.util.UUID
 
 /** Single locally running M2+M3 inference process, shared by the UI's recordings. */
 internal class LocalTranscriptionPipeline(private val context: Context) {

@@ -7,6 +7,119 @@ import com.team404bnf.app.ui.playback.groupTranscriptSegments
 
 object TranscriptUserEdits {
 
+    fun splitBeforeIds(root: JsonObject): Set<String> = root.getAsJsonArray("splitBeforeSegmentIds")
+        ?.mapNotNull { if(it.isJsonPrimitive && it.asJsonPrimitive.isString) it.asString else null }
+        ?.toSet() ?: emptySet()
+
+    private fun hiddenIds(root: JsonObject): Set<String> = root.getAsJsonArray("hiddenSegments")
+        ?.map { it.asString }?.toSet() ?: emptySet()
+
+    fun changeSpeakers(root: JsonObject, original: ParsedTranscript, ids: List<String>, speakerId: String?) {
+        val byId = original.segments.associateBy { it.id }
+        val known = original.speakerLabels.keys + original.segments.mapNotNull { it.speakerId }
+        require(speakerId == null || speakerId in known) { "Участник не найден" }
+        require(ids.isNotEmpty() && ids.all { it in byId && it !in hiddenIds(root) }) { "Реплика недоступна для редактирования" }
+        val speakers = section(root, "speakers")
+        ids.forEach { id ->
+            when {
+                speakerId == byId.getValue(id).speakerId -> speakers.remove(id)
+                speakerId == null -> speakers.add(id, com.google.gson.JsonNull.INSTANCE)
+                else -> speakers.addProperty(id, speakerId)
+            }
+        }
+    }
+
+    fun changeGroupSpeaker(root: JsonObject, original: ParsedTranscript, ids: List<String>, speakerId: String?) {
+        validateGroup(root, original, ids)
+        changeSpeakers(root, original, ids, speakerId)
+    }
+
+    fun hideSegments(root: JsonObject, original: ParsedTranscript, ids: List<String>) {
+        val known = original.segments.map { it.id }.toSet()
+        require(ids.isNotEmpty() && ids.all { it in known }) { "Реплика не найдена" }
+        val hidden = hiddenIds(root) + ids
+        root.add("hiddenSegments", JsonArray().apply { hidden.forEach { add(it) } })
+    }
+
+    fun hideGroup(root: JsonObject, original: ParsedTranscript, ids: List<String>) {
+        validateGroup(root, original, ids)
+        hideSegments(root, original, ids)
+    }
+
+    fun restoreSegment(root: JsonObject, original: ParsedTranscript, id: String) {
+        require(original.segments.any { it.id == id }) { "Реплика не найдена" }
+        val remaining = hiddenIds(root) - id
+        if(remaining.isEmpty()) root.remove("hiddenSegments")
+        else root.add("hiddenSegments", JsonArray().apply { remaining.forEach { add(it) } })
+    }
+
+    fun splitGroup(root: JsonObject, original: ParsedTranscript, ids: List<String>) {
+        validateGroup(root, original, ids)
+        val boundaries = splitBeforeIds(root) + ids.drop(1)
+        root.add("splitBeforeSegmentIds", JsonArray().apply { boundaries.forEach { add(it) } })
+    }
+
+    fun restoreMerge(root: JsonObject, original: ParsedTranscript, id: String) {
+        val current = apply(original, root.toString())
+        val positions = original.segments.mapIndexed { index, segment -> segment.id to index }.toMap()
+        require(id in com.team404bnf.app.ui.playback.restorableMergeStarts(current.segments, positions, splitBeforeIds(root))) {
+            "Эту реплику нельзя объединить с предыдущей"
+        }
+        val boundaries = splitBeforeIds(root) - id
+        if(boundaries.isEmpty()) root.remove("splitBeforeSegmentIds")
+        else root.add("splitBeforeSegmentIds", JsonArray().apply { boundaries.forEach { add(it) } })
+    }
+
+    fun reset(root: JsonObject) { root.keySet().toList().forEach { root.remove(it) } }
+
+    /** Validate the selected visible group, not merely a consecutive range of original IDs. */
+    fun validateGroup(root: JsonObject, original: ParsedTranscript, segmentIds: List<String>) {
+        require(segmentIds.size >= 2 && segmentIds.distinct().size == segmentIds.size) { "Некорректная группа реплик" }
+        val positions = original.segments.mapIndexed { index, segment -> segment.id to index }.toMap()
+        val current = apply(original, root.toString())
+        require(groupTranscriptSegments(current.segments, positions, splitBeforeSegmentIds = splitBeforeIds(root))
+            .any { group -> group.segments.map { it.id } == segmentIds }) {
+            "Группа изменилась. Откройте её меню заново."
+        }
+    }
+
+    /** Recovery previews the saved corrections while leaving the hidden overlay untouched. */
+    fun deletedSegments(root: JsonObject, original: ParsedTranscript): List<TranscriptSegment> {
+        val restored = clean(root.deepCopy(), original)
+        val hidden = restored.getAsJsonArray("hiddenSegments")?.map { it.asString }?.toSet() ?: emptySet()
+        if(hidden.isEmpty()) return emptyList()
+        restored.remove("hiddenSegments")
+        return apply(original, restored.toString()).segments.filter { it.id in hidden }
+    }
+
+    /** Apply one editor submission by segment ID, without changing the original or its timing. */
+    fun updateSegment(
+        root: JsonObject,
+        original: ParsedTranscript,
+        segmentId: String,
+        text: String,
+        speakerId: String?
+    ) {
+        val normalized = text.trim()
+        require(normalized.isNotEmpty()) { "Текст реплики не может быть пустым" }
+        require(normalized.length <= 5000) { "Текст слишком длинный" }
+        val segment = original.segments.firstOrNull { it.id == segmentId }
+            ?: error("Реплика не найдена")
+        require(segmentId !in hiddenIds(root)) { "Реплика удалена. Сначала восстановите её." }
+        val knownSpeakers = original.speakerLabels.keys + original.segments.mapNotNull { it.speakerId }
+        require(speakerId == null || speakerId in knownSpeakers) { "Участник не найден" }
+
+        val texts = section(root, "texts")
+        if (normalized == segment.text) texts.remove(segmentId)
+        else texts.addProperty(segmentId, normalized)
+        val speakers = section(root, "speakers")
+        when {
+            speakerId == segment.speakerId -> speakers.remove(segmentId)
+            speakerId == null -> speakers.add(segmentId, com.google.gson.JsonNull.INSTANCE)
+            else -> speakers.addProperty(segmentId, speakerId)
+        }
+    }
+
     fun clean(
         root: JsonObject,
         original: ParsedTranscript

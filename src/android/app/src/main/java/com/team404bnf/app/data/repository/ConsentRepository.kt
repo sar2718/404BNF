@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
-private val Context.consentDataStore by preferencesDataStore(
+// Keep the existing file name so consent and app preferences survive upgrades.
+internal val Context.appPreferences by preferencesDataStore(
     name = "consent_settings"
 )
 
@@ -36,7 +37,7 @@ class ConsentRepository(
     private val appContext = context.applicationContext
 
     val status: Flow<ConsentStatus> =
-        appContext.consentDataStore.data
+        appContext.appPreferences.data
             .map { preferences ->
                 if (
                     preferences[VERSION_KEY] == TERMS_VERSION &&
@@ -52,7 +53,7 @@ class ConsentRepository(
             }
 
     suspend fun accept() {
-        appContext.consentDataStore.edit { preferences ->
+        appContext.appPreferences.edit { preferences ->
             preferences[VERSION_KEY] = TERMS_VERSION
             preferences[ACCEPTED_AT_KEY] =
                 System.currentTimeMillis()

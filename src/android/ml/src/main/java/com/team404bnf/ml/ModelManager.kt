@@ -27,8 +27,42 @@ sealed interface ModelEvent {
  * explicitly on first-run setup with user consent and a network connection.
  */
 class ModelManager(context: Context) {
+    companion object {
+        // Shared by UI, recording and pipeline instances accessing the same managed directory.
+        private val installLock = Mutex()
+    }
     private val root = File(context.applicationContext.filesDir, "models")
-    private val installLock = Mutex()
+
+    private fun managedFiles(models: Set<ModelId>) = managedModelFiles(root, models)
+
+    suspend fun storageBytes(models: Set<ModelId>): Long = withContext(Dispatchers.IO) {
+        installLock.withLock { managedFiles(models).filter { it.isFile }.sumOf { it.length() } }
+    }
+
+    /** Caller must hold the app's task/model exclusion lock. Never delete directories recursively. */
+    suspend fun removeManaged(models: Set<ModelId>) = withContext(Dispatchers.IO) {
+        installLock.withLock {
+            currentCoroutineContext().ensureActive()
+            removeManagedModelFiles(root, models)
+        }
+    }
+
+    /** An explicit retry can replace damaged managed files; verified files and resumable parts remain. */
+    suspend fun removeInvalidManaged(models: Set<ModelId>) = withContext(Dispatchers.IO) {
+        installLock.withLock {
+            val allowed = managedFiles(models).toSet()
+            ModelCatalog.assets.filter { it.model in models }.forEach { asset ->
+                val target = File(root.canonicalFile, asset.relativePath)
+                if (target.exists() && validationError(target, asset) != null) {
+                    listOf(target, File(target.path + ".part")).forEach { file ->
+                        check(file in allowed && (!file.exists() || (file.isFile && file.delete()))) {
+                            "Cannot replace invalid ${file.name}"
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     fun pathFor(asset: ModelAsset): File {
         require(ModelCatalog.assets.contains(asset)) { "Unknown model asset" }
@@ -36,20 +70,20 @@ class ModelManager(context: Context) {
     }
 
     /** Verify hashes on IO dispatcher; potentially scans ~1 GB for GigaAM. */
-    suspend fun verifyInstalled(): List<String> = withContext(Dispatchers.IO) {
+    suspend fun verifyInstalled(models: Set<ModelId> = ModelCatalog.allModels.toSet()): List<String> = withContext(Dispatchers.IO) {
         installLock.withLock {
-            ModelCatalog.assets.mapNotNull { asset ->
+            ModelCatalog.assets.filter { it.model in models }.mapNotNull { asset ->
                 val error = validationError(pathFor(asset), asset)
                 if (error == null) null else "${asset.relativePath}: $error"
             }
         }
     }
 
-    suspend fun ensureInstalled(onEvent: (ModelEvent) -> Unit = {}) = withContext(Dispatchers.IO) {
+    suspend fun ensureInstalled(models: Set<ModelId> = ModelCatalog.allModels.toSet(), onEvent: (ModelEvent) -> Unit = {}) = withContext(Dispatchers.IO) {
         installLock.withLock {
             root.mkdirs()
             require(root.isDirectory) { "Cannot create model directory: $root" }
-            for (asset in ModelCatalog.assets) {
+            for (asset in ModelCatalog.assets.filter { it.model in models }) {
                 currentCoroutineContext().ensureActive()
                 val target = pathFor(asset)
                 if (target.exists()) {
@@ -177,5 +211,25 @@ class ModelManager(context: Context) {
             }
         }
         error("Could not resume download of ${asset.fileName}")
+    }
+}
+
+
+/** Enumerate only catalog-owned files and resumable parts, never an enclosing directory. */
+internal fun managedModelFiles(root: File, models: Set<ModelId>): List<File> {
+    check(!java.nio.file.Files.isSymbolicLink(root.toPath())) { "Unsafe model directory" }
+    val canonicalRoot = root.canonicalFile
+    return ModelCatalog.assets.filter { it.model in models }.flatMap { asset ->
+        listOf(File(canonicalRoot, asset.relativePath), File(canonicalRoot, asset.relativePath + ".part"))
+    }.onEach { file ->
+        check(file.path.startsWith(canonicalRoot.path + File.separator) && file.canonicalPath == file.path) {
+            "Unsafe managed model path"
+        }
+    }
+}
+
+internal fun removeManagedModelFiles(root: File, models: Set<ModelId>) {
+    managedModelFiles(root, models).forEach { file ->
+        check(!file.exists() || (file.isFile && file.delete())) { "Cannot remove ${file.name}" }
     }
 }

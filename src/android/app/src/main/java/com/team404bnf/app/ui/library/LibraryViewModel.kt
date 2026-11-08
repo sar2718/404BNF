@@ -5,6 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.team404bnf.app.data.repository.RecordingRepository
+import com.team404bnf.app.data.repository.AudioImportException
+import com.team404bnf.app.data.repository.TranscriptRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import com.team404bnf.app.transcription.TranscriptionTaskManager
 import com.team404bnf.app.transcription.TranscriptionTaskStatus
 import kotlinx.coroutines.CancellationException
@@ -16,8 +22,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModel(
-    private val repository: RecordingRepository
+    private val repository: RecordingRepository,
+    private val transcriptRepository: TranscriptRepository
 ) : ViewModel() {
 
     private val _deleting = MutableStateFlow(false)
@@ -48,12 +56,10 @@ class LibraryViewModel(
 
             } catch (e: Exception) {
                 _importError.value =
-                    if (e is IllegalArgumentException ||
-                        e is IllegalStateException
-                    ) {
-                        e.message ?: "Ошибка импорта"
+                    if (e is AudioImportException) {
+                        e.message ?: "Не удалось прочитать аудиофайл."
                     } else {
-                        "Не удалось импортировать аудиофайл"
+                        "Не удалось прочитать аудиофайл."
                     }
 
             } finally {
@@ -85,53 +91,38 @@ class LibraryViewModel(
         }
     }
 
+    // Observe persisted snapshots as well as tasks: older transcripts can predate A17.
+    private val recordingsWithTranscripts = repository.observeRecordings().flatMapLatest { recordings ->
+        if (recordings.isEmpty()) flowOf(emptyList())
+        else combine(recordings.map { recording ->
+            transcriptRepository.observeExists(recording.id).map { exists -> recording to exists }
+        }) { it.toList() }
+    }
+
     val savedRecordings = combine(
-        repository.observeRecordings(),
+        recordingsWithTranscripts,
         TranscriptionTaskManager.tasksFlow
     ) { recordings, tasks ->
-
-        val formatter = SimpleDateFormat(
-            "HH:mm",
-            Locale.getDefault()
-        )
-
-        recordings.map { recording ->
+        val formatter = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
+        recordings.map { (recording, hasTranscript) ->
             val task = tasks[recording.id]
-            val totalSeconds = recording.durationMs / 1000
-
-            val sourceLabel = if (recording.sourceType == "IMPORT") {
-                "Импортировано"
-            } else {
-                "Аудиозапись"
-            }
-
-            val statusText = when {
-                task?.isActive == true -> "Обработка (${task.stageMessage})"
-                task?.status == TranscriptionTaskStatus.INTERRUPTED -> "Прервано"
-                task?.status == TranscriptionTaskStatus.FAILED -> "Ошибка"
-                else -> "без расшифровки"
-            }
-
             RecordingPreview(
                 id = recording.id,
                 title = recording.title,
-                subtitle = if (recording.audioRelativePath != null) {
-                    "$sourceLabel · %02d:%02d · $statusText".format(
-                        totalSeconds / 60,
-                        totalSeconds % 60
-                    )
-                } else {
-                    "Тест Room · аудио отсутствует"
-                },
-                date = formatter.format(
-                    Date(recording.createdAtEpochMs)
-                )
+                date = formatter.format(Date(recording.createdAtEpochMs)),
+                createdAtEpochMs = recording.createdAtEpochMs,
+                durationMs = recording.durationMs,
+                status = recordingStatusLabel(hasTranscript, task?.status),
+                hasTranscript = hasTranscript,
+                processing = task?.isActive == true,
+                hasAudio = recording.audioRelativePath != null
             )
         }
     }
 
     class Factory(
-        private val repository: RecordingRepository
+        private val repository: RecordingRepository,
+        private val transcriptRepository: TranscriptRepository
     ) : ViewModelProvider.Factory {
 
         @Suppress("UNCHECKED_CAST")
@@ -143,7 +134,7 @@ class LibraryViewModel(
                     LibraryViewModel::class.java
                 )
             ) {
-                return LibraryViewModel(repository) as T
+                return LibraryViewModel(repository, transcriptRepository) as T
             }
 
             throw IllegalArgumentException(
@@ -151,4 +142,15 @@ class LibraryViewModel(
             )
         }
     }
+}
+
+internal fun recordingStatusLabel(hasTranscript: Boolean, status: TranscriptionTaskStatus?): String = when {
+    status == TranscriptionTaskStatus.QUEUED -> "В очереди"
+    status in setOf(TranscriptionTaskStatus.PREPARING, TranscriptionTaskStatus.RUNNING_ASR,
+        TranscriptionTaskStatus.RUNNING_DIARIZATION, TranscriptionTaskStatus.SAVING) -> "Обработка"
+    hasTranscript -> "Расшифровка готова"
+    status == TranscriptionTaskStatus.FAILED -> "Ошибка обработки"
+    status == TranscriptionTaskStatus.INTERRUPTED -> "Прервано"
+    status == TranscriptionTaskStatus.CANCELLED -> "Прервано"
+    else -> "Только аудио"
 }

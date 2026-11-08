@@ -11,10 +11,6 @@ import com.team404bnf.app.transcription.TranscriptSegment
 
 internal sealed interface TranscriptEditRequest {
 
-    data class TextEdit(
-        val segment: TranscriptSegment
-    ) : TranscriptEditRequest
-
     data class SpeakerChange(
         val segment: TranscriptSegment
     ) : TranscriptEditRequest
@@ -29,52 +25,11 @@ internal fun TranscriptEditDialog(
     request: TranscriptEditRequest,
     speakerLabels: Map<String, String>,
     onDismiss: () -> Unit,
-    onTextSave: (String, String) -> Unit,
     onSpeakerChange: (String, String?) -> Unit,
-    onSpeakerRename: (String, String) -> Unit
+    onSpeakerRename: (String, String) -> Unit,
+    enabled: Boolean = true
 ) {
     when (request) {
-
-        is TranscriptEditRequest.TextEdit -> {
-
-            var value by remember(request.segment.id) {
-                mutableStateOf(request.segment.text)
-            }
-
-            AlertDialog(
-                onDismissRequest = onDismiss,
-                title = { Text("Изменить текст") },
-                text = {
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        maxLines = 8
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = value.isNotBlank() &&
-                            value.length <= 5000,
-                        onClick = {
-                            onTextSave(
-                                request.segment.id,
-                                value
-                            )
-                            onDismiss()
-                        }
-                    ) {
-                        Text("Сохранить")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = onDismiss) {
-                        Text("Отмена")
-                    }
-                }
-            )
-        }
 
         is TranscriptEditRequest.SpeakerChange -> {
 
@@ -87,7 +42,8 @@ internal fun TranscriptEditDialog(
                         speakerId
                     )
                 },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                enabled = enabled
             )
         }
 
@@ -103,18 +59,25 @@ internal fun TranscriptEditDialog(
                 onDismissRequest = onDismiss,
                 title = { Text("Имя участника") },
                 text = {
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("Отображаемое имя") }
-                    )
+                    Column {
+                        Text(
+                            "Имя изменится во всех репликах этого говорящего.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedTextField(
+                            value = value,
+                            enabled = enabled,
+                            onValueChange = { value = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Отображаемое имя") }
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = value.isNotBlank() &&
-                            value.length <= 60,
+                        enabled = enabled && value.isNotBlank() &&
+                            value.trim().length <= 60,
                         onClick = {
                             onSpeakerRename(
                                 request.speakerId,

@@ -17,6 +17,77 @@ import java.util.UUID
 
 class BackgroundTranscriptionTest {
 
+    private suspend fun finishEarlierTestTasks() {
+        TranscriptionTaskManager.tasksFlow.value.values.filter { it.isActive }.forEach {
+            TranscriptionTaskManager.cancel(it.recordingId)
+        }
+    }
+
+    @Test
+    fun `queued transcription prevents model deletion`() = runBlocking {
+        finishEarlierTestTasks()
+        val id = UUID.randomUUID().toString()
+        TranscriptionTaskManager.enqueueForTest(id)
+        var deleted = false
+        try {
+            TranscriptionTaskManager.withModelsIdle { deleted = true }
+            org.junit.Assert.fail("Queued tasks must protect their model files")
+        } catch (_: IllegalStateException) {
+            assertFalse(deleted)
+        } finally {
+            TranscriptionTaskManager.cancel(id)
+        }
+    }
+
+    @Test
+    fun `native processing lock protects models even after task cancellation`() = runBlocking {
+        finishEarlierTestTasks()
+        TranscriptionTaskManager.mlMutex.lock()
+        try {
+            TranscriptionTaskManager.withModelsIdle { org.junit.Assert.fail("Native model use is still active") }
+            org.junit.Assert.fail("Deletion must be rejected")
+        } catch (_: IllegalStateException) {
+            // A cancelled task can still be unwinding its native sessions.
+        } finally {
+            TranscriptionTaskManager.mlMutex.unlock()
+        }
+    }
+
+    @Test
+    fun `enqueue waits until destructive model operation finishes`() = runBlocking {
+        finishEarlierTestTasks()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val id = UUID.randomUUID().toString()
+        val deletion = async {
+            TranscriptionTaskManager.withModelsIdle { entered.complete(Unit); release.await() }
+        }
+        entered.await()
+        val enqueue = async { TranscriptionTaskManager.enqueueForTest(id) }
+        try {
+            delay(20)
+            assertFalse(enqueue.isCompleted)
+            assertEquals(null, TranscriptionTaskManager.getTask(id))
+        } finally {
+            release.complete(Unit)
+        }
+        deletion.await()
+        assertNotNull(enqueue.await())
+        TranscriptionTaskManager.cancel(id)
+    }
+
+    @Test
+    fun `failed model removal releases both exclusion locks`() = runBlocking {
+        finishEarlierTestTasks()
+        try {
+            TranscriptionTaskManager.withModelsIdle { error("File removal failed") }
+        } catch (_: IllegalStateException) { }
+        assertFalse(TranscriptionTaskManager.mlMutex.isLocked)
+        var retried = false
+        TranscriptionTaskManager.withModelsIdle { retried = true }
+        assertTrue(retried)
+    }
+
     @Test
     fun `Test A - first enqueue stays QUEUED and is NOT marked as INTERRUPTED`() = runBlocking {
         val recordingId = UUID.randomUUID().toString()

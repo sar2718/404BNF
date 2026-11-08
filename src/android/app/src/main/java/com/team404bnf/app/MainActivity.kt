@@ -3,6 +3,8 @@ package com.team404bnf.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +38,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
 
         // База данных
         val database = AppDatabase.getInstance(applicationContext)
@@ -46,10 +52,12 @@ class MainActivity : ComponentActivity() {
             applicationContext
         )
 
+        val transcriptRepository = TranscriptRepository(database, repository)
+
         // ViewModel библиотеки
         val libraryViewModel = ViewModelProvider(
             this,
-            LibraryViewModel.Factory(repository)
+            LibraryViewModel.Factory(repository, transcriptRepository)
         )[LibraryViewModel::class.java]
 
         // ViewModel диктофона
@@ -111,109 +119,104 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    ConsentStatus.ACCEPTED -> {
-
-                        val savedRecordings by libraryViewModel
-                            .savedRecordings
-                            .collectAsState(initial = emptyList())
-
-                        val navController = rememberNavController()
-
-                        NavHost(
-                            navController = navController,
-                            startDestination = "library"
-                        ) {
-
-                            composable("library") {
-                                val deleting by libraryViewModel.deleting.collectAsState()
-
-                                val deleteError by libraryViewModel.deleteError.collectAsState()
-
-                                val importing by libraryViewModel.importing.collectAsState()
-
-                                val importError by libraryViewModel.importError.collectAsState()
-
-                                LibraryScreen(
-                                    savedRecordings = savedRecordings,
-
-                                    onNewRecording = {
-                                        navController.navigate("recorder")
-                                    },
-
-                                    onSavedRecordingOpen = { recordingId ->
-                                        navController.navigate(
-                                            "player/$recordingId"
-                                        )
-                                    },
-
-                                    deleting = deleting,
-
-                                    deleteError = deleteError,
-
-                                    onDeleteRecordings = { ids ->
-                                        libraryViewModel.deleteRecordings(ids)
-                                    },
-
-                                    importing = importing,
-
-                                    importError = importError,
-
-                                    onImportAudio = { uri ->
-                                        libraryViewModel.importAudio(uri)
-                                    }
-                                )
-                            }
-
-                            composable("recorder") {
-                                RecorderScreen(
-                                    viewModel = recorderViewModel,
-
-                                    onBack = {
-                                        navController.popBackStack()
-                                    }
-                                )
-                            }
-
-                            composable("player/{recordingId}") { backStackEntry ->
-
-                                val recordingId = backStackEntry.arguments
-                                    ?.getString("recordingId")
-                                    .orEmpty()
-
-                                val transcriptRepository = remember {
-                                    TranscriptRepository(
-                                        database = database,
-                                        recordingRepository = repository
-                                    )
-                                }
-
-                                val playbackViewModel = remember(backStackEntry) {
-
-                                    ViewModelProvider(
-                                        backStackEntry,
-
-                                        PlaybackViewModel.Factory(
-                                            applicationContext,
-                                            repository,
-                                            recordingId,
-                                            transcriptRepository
-                                        )
-
-                                    )[PlaybackViewModel::class.java]
-                                }
-
-                                PlaybackScreen(
-                                    viewModel = playbackViewModel,
-
-                                    onBack = {
-                                        navController.popBackStack()
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    ConsentStatus.ACCEPTED -> RecognitionNavigation(
+                        libraryViewModel, recorderViewModel, repository, transcriptRepository
+                    )
                 }
             }
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun RecognitionNavigation(
+    libraryViewModel: LibraryViewModel,
+    recorderViewModel: RecorderViewModel,
+    repository: RecordingRepository,
+    transcriptRepository: TranscriptRepository
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val models = remember(context) { com.team404bnf.app.models.RecognitionModels.get(context) }
+    val modelState by models.state.collectAsState()
+    val pendingId by models.pendingRecordingId.collectAsState()
+    val savedRecordings by libraryViewModel.savedRecordings.collectAsState(initial = emptyList())
+    val navController = rememberNavController()
+
+    fun toLibrary() {
+        if (!navController.popBackStack("library", false)) navController.navigate("library") {
+            popUpTo(navController.graph.id) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+    fun openPlayer(id: String, processing: Boolean = false, removeRoute: String? = null) {
+        navController.navigate("player/$id?processing=$processing") {
+            if(removeRoute != null) popUpTo(removeRoute) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+
+    NavHost(navController = navController, startDestination = "startup") {
+        composable("startup") {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Text("Проверяем офлайн-модели…")
+                }
+            }
+            androidx.compose.runtime.LaunchedEffect(modelState.phase, pendingId) {
+                if (!modelState.busy) navController.navigate(
+                    if (modelState.ready && pendingId == null) "library" else "models"
+                ) { popUpTo("startup") { inclusive = true }; launchSingleTop = true }
+            }
+        }
+        composable("models") {
+            com.team404bnf.app.models.ModelsScreen(models, onBack = ::toLibrary, onContinue = { id ->
+                models.launchTranscription(id)
+                openPlayer(id, processing = true, removeRoute = "models")
+            })
+        }
+        composable("library") {
+            val deleting by libraryViewModel.deleting.collectAsState()
+            val deleteError by libraryViewModel.deleteError.collectAsState()
+            val importing by libraryViewModel.importing.collectAsState()
+            val importError by libraryViewModel.importError.collectAsState()
+            LibraryScreen(
+                savedRecordings = savedRecordings,
+                onNewRecording = {
+                    recorderViewModel.prepareNewRecording()
+                    navController.navigate("recorder") { launchSingleTop = true }
+                },
+                onSavedRecordingOpen = { openPlayer(it) },
+                deleting = deleting, deleteError = deleteError,
+                onDeleteRecordings = libraryViewModel::deleteRecordings,
+                importing = importing, importError = importError,
+                onImportAudio = libraryViewModel::importAudio,
+                onManageModels = { navController.navigate("models") { launchSingleTop = true } }
+            )
+        }
+        composable("recorder") {
+            RecorderScreen(recorderViewModel, onBack = { navController.popBackStack() }, onSaved = { id ->
+                if (models.pendingRecordingId.value == id) {
+                    navController.navigate("models") { popUpTo("recorder") { inclusive = true }; launchSingleTop = true }
+                } else openPlayer(id, processing = true, removeRoute = "recorder")
+            })
+        }
+        composable("player/{recordingId}?processing={processing}", arguments = listOf(
+            androidx.navigation.navArgument("processing") {
+                type = androidx.navigation.NavType.BoolType; defaultValue = false
+            }
+        )) { entry ->
+            val recordingId = entry.arguments?.getString("recordingId").orEmpty()
+            val viewModel = remember(entry) {
+                ViewModelProvider(entry, PlaybackViewModel.Factory(context, repository,
+                    recordingId, transcriptRepository))[PlaybackViewModel::class.java]
+            }
+            PlaybackScreen(viewModel, onBack = ::toLibrary,
+                openProcessing = entry.arguments?.getBoolean("processing") == true,
+                onManageModels = {
+                    models.rememberRecording(recordingId)
+                    navController.navigate("models") { launchSingleTop = true }
+                })
         }
     }
 }

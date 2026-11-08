@@ -1,33 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- Both debug launchers are separate from Edik's primary UI. -->
+        <!-- Debug activities remain accessible via explicit intents or ADB without creating launcher icons. -->
         <activity
             android:name="com.team404bnf.app.debug.ModelDebugActivity"
             android:exported="true"
-            android:label="404BNF ML Setup (debug)">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:label="404BNF ML Setup (debug)" />
         <activity
             android:name="com.team404bnf.app.debug.AsrDebugActivity"
             android:exported="true"
-            android:label="404BNF ASR Test (debug)">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:label="404BNF ASR Test (debug)" />
         <activity
             android:name="com.team404bnf.app.debug.DiarDebugActivity"
             android:exported="true"
-            android:label="404BNF Diar Test (debug)">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:label="404BNF Diar Test (debug)" />
     </application>
 </manifest>

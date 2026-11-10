@@ -21,6 +21,7 @@ GigaAM показала наименьший WER среди испытанных
 
 | Материал | Ссылка / статус |
 | --- | --- |
+| Презентация проекта | [Слайды 404BNF](artifacts/presentation/) |
 | APK | [Скачать 404BNF 1.0 Debug APK](https://github.com/sar2718/404BNF/releases/download/v1.0.0-debug/404BNF-1.0-debug.apk) · [паспорт и SHA-256](artifacts/apk/README.md) |
 | Исходный код | [Android-проект](src/android/) |
 | Инструкция | [Установка, сборка и использование](docs/INSTALLATION.md) |

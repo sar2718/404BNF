@@ -52,5 +52,8 @@ google-services.json
 *.amr
 *.3gp
 
+# Versioned audio for the ML benchmark
+!/artifacts/ml-benchmarks/dataset/**/*.wav
+
 # Local distribution copy; publish as a Release asset or opt into Git LFS
 /artifacts/apk/*.apk

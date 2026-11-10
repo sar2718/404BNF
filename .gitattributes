@@ -1,0 +1,2 @@
+# Preserve the original bytes of the benchmark fixtures for SHA-256 checks.
+/artifacts/ml-benchmarks/dataset/** -text

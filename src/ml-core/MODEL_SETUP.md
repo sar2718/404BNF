@@ -2,13 +2,14 @@
 
 ## Один запуск в PowerShell (Windows, Python 3.13)
 
-Из корня **404BNF-ML-Core**:
+Из корня репозитория перейдите в `src/ml-core/`:
 
 ```powershell
+cd src/ml-core
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-Команда создаст `.venv`, установит зависимости из `requirements-win-py313.lock` (точные версии из успешного запуска), проверит FFmpeg (при необходимости установит через WinGet), скачает **исходную GigaAM v3 E2E RNN-T FP32** и две модели диаризации, проверит SHA-256 и попробует загрузить GigaAM в режиме `HF_HUB_OFFLINE=1`. **INT8 не используется.**
+Команда создаст `.venv`, установит закреплённые зависимости из `requirements-win-py313.lock`, проверит FFmpeg/FFprobe (при необходимости установит через WinGet), скачает **GigaAM v3 E2E RNN-T FP32** и две модели диаризации, проверит SHA-256 и попробует загрузить GigaAM в режиме `HF_HUB_OFFLINE=1`. **INT8 не используется.** Остальные команды в этом документе выполняются из `src/ml-core/`.
 
 Нужен интернет **для первого развёртывания** и достаточно места на диске: суммарно приблизительно 1 ГБ для весов плюс библиотеки и временные файлы. Начальные загрузки на других компьютерах выполняются отдельно.
 
@@ -31,12 +32,13 @@ models/
     └── voxceleb_CAM++.onnx
 ```
 
-GigaAM берём **из фиксированного commit** `322c3b29492673eb7d0b434bfa9dfb8653e34d02` репозитория `istupakov/gigaam-v3-onnx` с помощью `huggingface_hub.hf_hub_download` (`onnx-asr==0.12.0` загружает только локальные файлы для инференса). ONNX-файлы не коммитятся. У трёх FP32 ONNX-файлов сверяются SHA-256 с опубликованными контрольными суммами; после установки дополнительно проверяется манифест всех шести файлов. Отдельные SHA-256 Silero и CAM++ зафиксированы в `processor_core/model_assets.py` и взяты из предыдущей проверенной сборки.
+GigaAM загружается **из фиксированного commit** `322c3b29492673eb7d0b434bfa9dfb8653e34d02` репозитория `istupakov/gigaam-v3-onnx` с помощью `huggingface_hub.hf_hub_download`. Адаптер `GigaAmAsrEngine` передаёт `onnx-asr` локальную директорию весов. ONNX-файлы не коммитятся. Ожидаемые SHA-256 трёх FP32 ONNX-файлов, Silero и CAM++ заданы в [model_assets.py](processor_core/model_assets.py). Для конфигурации, YAML и словаря GigaAM отдельных ожидаемых хэшей в коде нет: используются закреплённая revision, проверка непустого файла и локальный манифест установки с размерами и SHA-256 всех шести файлов GigaAM.
 
 Репозитории:
-- GigaAM ONNX: https://huggingface.co/istupakov/gigaam-v3-onnx
-- Silero: https://huggingface.co/bitsydarel/silero-vad-onnx
-- WeSpeaker CAM++: https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus
+
+- [GigaAM ONNX](https://huggingface.co/istupakov/gigaam-v3-onnx)
+- [Silero](https://huggingface.co/bitsydarel/silero-vad-onnx)
+- [WeSpeaker CAM++](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus)
 
 ## Проверка без загрузки
 
@@ -50,7 +52,7 @@ GigaAM берём **из фиксированного commit** `322c3b29492673eb
 .\.venv\Scripts\python.exe run.py --audio "C:\путь\к\записи.wav" --output output\test.json
 ```
 
-**Не используйте буквальный пример `C:\path\to\recording.m4a`** — это не реальный файл. Путь должен вести к существующей записи. Для повторного вывода в тот же JSON добавьте `--overwrite`.
+Замените путь после `--audio` на существующую запись. Для повторного вывода в тот же JSON добавьте `--overwrite`.
 
 ## Если произошла ошибка
 
@@ -58,7 +60,7 @@ GigaAM берём **из фиксированного commit** `322c3b29492673eb
 - FFmpeg установлен, но не виден — перезапустите PyCharm и повторите `setup.ps1`.
 - Загрузка прервалась — повторите `setup.ps1`. Исправные Silero/CAM++ не скачиваются заново; частично скачанные файлы GigaAM загрузчик попробует восстановить при повторе. Не удаляйте исправные веса без необходимости.
 - SHA-256 не совпал — остановитесь и проверьте источник, **не обходите проверку**.
-- `GigaAM is not installed...` — запустите `setup.ps1`; обычный `run.py` больше **не начинает скрытую загрузку GigaAM**.
+- `GigaAM is not installed...` — запустите `setup.ps1`; обычный `run.py` использует локальные веса GigaAM и не выполняет их установку.
 - Если GigaAM загрузилась лишь частично и повторный запуск не помогает, сначала переименуйте `models/gigaam-v3-e2e-rnnt` в резервный каталог, затем снова вызовите `setup.ps1`.
 
 Параметры скрипта для опытных пользователей: `-SkipFfmpegInstall`, `-SkipModels`, `-SkipOfflineCheck`. По умолчанию устанавливается всё и выполняется офлайн-проверка загрузчика.
@@ -67,4 +69,4 @@ GigaAM берём **из фиксированного commit** `322c3b29492673eb
 
 Коммитим `requirements-win-py313.lock`, `setup.ps1`, `tools/model_setup.py`, `processor_core/model_assets.py`, `requirements.txt`, `MODEL_SETUP.md`, `.gitignore` и весь `processor_core`. **Не коммитим** `.venv/`, файлы моделей, `.404bnf-model-manifest.json`, записи и `output/*.json`.
 
-Проверка успеха инсталлятора **не равна** тестам скорости/точности на другом устройстве; для этого нужна отдельная контрольная запись. Этот пакет предназначен для Python/Windows, а не для установки в Android APK.
+Успешная проверка инсталлятора подтверждает целостность файлов и загрузку GigaAM, но не скорость и точность распознавания; для них нужна отдельная контрольная запись. `setup.ps1` предназначен для Windows. Android устанавливает модели через экран приложения, без Python и PowerShell.

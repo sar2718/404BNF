@@ -20,7 +20,7 @@ data class DiarizationOutput(
     val modelId: String = "silero-wespeaker-campp",
 )
 
-/** Port of src/ml-core/processor_core/engines/diarization_impl.py (A4). */
+/** Port of src/ml-core/processor_core/engines/diarization_impl.py. */
 object DiarizationTimeline {
     private const val SAMPLE_RATE = 16_000
     private const val FRAME_SAMPLES = 512

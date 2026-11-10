@@ -125,7 +125,7 @@ object TranscriptionTaskManager {
                 check(_tasksMap.value.values.none { it.isProcessing } && activeJobs.isEmpty()) {
                     "Модели используются: дождитесь завершения обработки"
                 }
-                // Waiting tasks stay in A17/Room, but cannot reach native ML during model removal.
+                // Waiting tasks stay in Room, but cannot reach native ML during model removal.
                 _tasksMap.value.values.filter { it.status == TranscriptionTaskStatus.QUEUED }.forEach {
                     persistTask(it.copy(status = TranscriptionTaskStatus.WAITING_FOR_MODELS,
                         stageMessage = MODELS_REQUIRED_MESSAGE, updatedAtEpochMs = System.currentTimeMillis()))

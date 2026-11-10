@@ -1,7 +1,7 @@
-"""A4 live Silero VAD + WeSpeaker CAM++ ONNX -> A2 DiarizationResult.
+"""Silero VAD + WeSpeaker CAM++ ONNX -> DiarizationResult.
 
-Reuses the exact algorithms/classes from the previously benchmarked standalone
-mobile_diarization.py. Its input is A2 AudioInput; it NEVER reads a WAV itself.
+Uses the algorithms and ONNX wrappers in diarization_impl.py.
+Its input is canonical AudioInput; it NEVER reads a WAV itself.
 No manifest, ASR reference or ground-truth speaker counts are read.
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ class WeSpeakerDiarizationEngine:
 
     def diarize(self, audio: AudioInput) -> DiarizationResult:
         if not isinstance(audio, AudioInput):
-            raise TypeError('Expected the canonical A2 AudioInput')
+            raise TypeError('Expected the canonical AudioInput')
         if audio.sample_rate != self.legacy.SAMPLE_RATE:
             raise ValueError('Expected 16kHz AudioInput')
         started = time.perf_counter()
@@ -93,9 +93,9 @@ class WeSpeakerDiarizationEngine:
             num_speakers=self.num_speakers)
         raw_turns = self.legacy.assign_timeline(speech, windows, labels,
                                                 audio.duration)
-        # Preserve UNKNOWN intervals as metadata; A2's SpeakerTurn explicitly
-        # forbids a synthetic UNKNOWN voice. A2 may attribute nearby words by its
-        # own temporal fallback: this is NOT necessarily parity for short turns.
+        # Preserve UNKNOWN intervals as metadata; SpeakerTurn explicitly
+        # forbids a synthetic UNKNOWN voice. The pipeline may attribute nearby
+        # words by its temporal fallback, which can differ on short turns.
         unknown_turns = [{'start': float(row['start']), 'end': float(row['end'])}
                          for row in raw_turns if row['speaker_id'] == 'UNKNOWN']
         turns = tuple(SpeakerTurn(start=float(row['start']), end=float(row['end']),
@@ -114,8 +114,8 @@ class WeSpeakerDiarizationEngine:
             'unknown_turns': unknown_turns,
             'inference_seconds': round(elapsed, 3),
             'rtf': round(elapsed / audio.duration, 4),
-            'benchmark_note': ('A4 diarization only: VAD+FBank+CAM++ + clustering; '
-                               'excludes A3 audio decoding and model loading'),
+            'benchmark_note': ('Diarization only: VAD+FBank+CAM++ + clustering; '
+                               'excludes audio preprocessing and model loading'),
             'capability_note': 'Single-speaker timeline; simultaneous speech is not separated',
         }
         return DiarizationResult(model_id=self.model_id, turns=turns,

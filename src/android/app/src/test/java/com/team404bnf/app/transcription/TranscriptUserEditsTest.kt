@@ -20,7 +20,7 @@ class TranscriptUserEditsTest {
         TranscriptJsonParser.parse(sample())
 
     // ========================================================================
-    // Tests from A11.2.5 (Restored)
+    // User edit persistence and recovery.
     // ========================================================================
 
     @Test
@@ -325,7 +325,7 @@ class TranscriptUserEditsTest {
     }
 
     // ========================================================================
-    // Diagnostic & Edge Case Tests from A11.2.6
+    // Diagnostics and edge cases.
     // ========================================================================
 
     @Test

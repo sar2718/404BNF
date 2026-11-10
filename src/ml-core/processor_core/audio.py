@@ -1,6 +1,6 @@
-"""A2 loader: mono 16-kHz PCM16 WAV only; no hidden resampling.
+"""WAV loader: mono 16-kHz PCM16 only; no hidden resampling.
 
-For M4A/MP3 add an explicit AudioPreprocessor in A3, preserving source hash.
+Use AudioPreprocessor for other formats, preserving the original source hash.
 """
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ def load_pcm16_wav(path: str | Path, record_id: str) -> AudioInput:
     file = Path(path).expanduser().resolve(strict=True)
     with wave.open(str(file), 'rb') as audio:
         if audio.getnchannels() != 1 or audio.getframerate() != 16000:
-            raise ValueError('A2 accepts only mono, 16000 Hz WAV; preprocess audio first')
+            raise ValueError('WAV loader accepts only mono, 16000 Hz WAV; preprocess audio first')
         if audio.getsampwidth() != 2 or audio.getcomptype() != 'NONE':
-            raise ValueError('A2 accepts only uncompressed 16-bit PCM WAV')
+            raise ValueError('WAV loader accepts only uncompressed 16-bit PCM WAV')
         raw = audio.readframes(audio.getnframes())
     samples = np.frombuffer(raw, dtype='<i2').astype(np.float32) / 32768.0
     return AudioInput(record_id=record_id, samples=np.ascontiguousarray(samples),

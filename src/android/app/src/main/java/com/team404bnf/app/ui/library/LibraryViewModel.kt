@@ -91,7 +91,7 @@ class LibraryViewModel(
         }
     }
 
-    // Observe persisted snapshots as well as tasks: older transcripts can predate A17.
+    // Observe persisted snapshots as well as tasks: a transcript can exist without a task entry.
     private val recordingsWithTranscripts = repository.observeRecordings().flatMapLatest { recordings ->
         if (recordings.isEmpty()) flowOf(emptyList())
         else combine(recordings.map { recording ->

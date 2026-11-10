@@ -1,4 +1,4 @@
-"""A3: source audio -> canonical mono 16-kHz float32 AudioInput or bounded chunks.
+"""Source audio -> canonical mono 16-kHz float32 AudioInput or bounded chunks.
 
 No ML dependencies. Only NumPy and local ffmpeg/ffprobe binaries are used.
 A source file's SHA-256 is computed over its original bytes BEFORE decoding.
@@ -173,7 +173,7 @@ class AudioPreprocessor:
                         if not self.clip_decoder_overshoot:
                             raise AudioPreprocessError('Decoded audio amplitude exceeds [-1, 1]')
                         # Lossy decoders can overshoot very slightly. Clip for the
-                        # same canonical amplitude contract used by A2/Android.
+                        # same canonical amplitude contract used by AudioInput/Android.
                         np.clip(samples, -1, 1, out=samples)
                     if position + len(samples) > max_samples:
                         raise AudioPreprocessError('Decoded audio exceeds maximum streaming duration')
@@ -209,7 +209,7 @@ class AudioPreprocessor:
                     process.stdout.close()
 
     def load(self, path: str | Path, record_id: str) -> AudioInput:
-        """Full audio for CURRENT A2 engines; explicitly bounded in duration."""
+        """Load full audio for the inference engines; explicitly bounded in duration."""
         source = self.inspect(path, record_id)
         if source.reported_duration is not None and source.reported_duration > self.max_full_seconds + 0.1:
             raise AudioPreprocessError('Full-audio length limit exceeded. Use iter_chunks for long recordings.')

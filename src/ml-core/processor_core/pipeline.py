@@ -1,4 +1,4 @@
-"""A2 model-independent pipeline: internal contracts -> transcript schema v1.
+"""Model-independent pipeline: internal contracts -> transcript schema v1.
 
 Speaker assignment uses the v2 time-overlap heuristic. It is intentionally not
 an ML model. This module does not load source code of any concrete engine.

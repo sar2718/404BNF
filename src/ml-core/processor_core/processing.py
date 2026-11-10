@@ -1,4 +1,4 @@
-"""A6: managed execution of the unchanged A2 pipeline, using the A3 preprocessor.
+"""Managed execution of audio preprocessing, inference, and transcript assembly.
 
 Each model is invoked exactly once. Stage states are deliberately discrete:
 no artificial percentage completion inside synchronous ONNX inference.
@@ -181,7 +181,7 @@ def _ensure_number(value: Any, name: str) -> float:
 
 
 def validate_transcript(data: dict[str, Any], audio: AudioInput) -> None:
-    """Validate A2 JSON-v1 without deleting/changing fields or inventing confidence.
+    """Validate transcript JSON v1 without deleting/changing fields or inventing confidence.
 
     This validation is intended for newly produced transcripts, not legacy input.
     """
@@ -246,7 +246,7 @@ def validate_transcript(data: dict[str, Any], audio: AudioInput) -> None:
 
 
 class _AsrResultAdapter:
-    """In-memory adapter: reuse A2 merge logic without re-running ASR."""
+    """In-memory adapter: reuse transcript merge logic without re-running ASR."""
     def __init__(self, result: AsrResult):
         self.model_id = result.model_id
         self.capabilities = EngineCapabilities(word_timestamps=True)
@@ -325,7 +325,7 @@ class ErrorHandler:
 
 
 class ProcessingManager:
-    """Single-use coordinator for A3 + two A2 engines + unchanged A2 assembler.
+    """Single-use coordinator for audio preprocessing, two engines, and transcript assembly.
 
     Cancellation is cooperative: checkpoints before and after each synchronous
     engine invocation, not during execution of a native ONNX session.
@@ -407,7 +407,7 @@ class ProcessingManager:
             raise
         except Exception as ex:
             failure = ErrorHandler.classify(state, ex)
-            LOG.debug('A6 processing failed (code=%s)', failure.code.value, exc_info=True)
+            LOG.debug('Audio processing failed (code=%s)', failure.code.value, exc_info=True)
             self.tracker.update(ProcessingStatus.FAILED,
                                 error_code=failure.code.value,
                                 error_message=str(failure))

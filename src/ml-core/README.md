@@ -1,127 +1,79 @@
-# 404BNF — ML Core (чистый Python-проект)
+# 404BNF — Python ML-ядро
 
-Назначение: **локальное Python ML-ядро** GigaAM + Silero VAD + WeSpeaker CAM++ с единым JSON v1. Это компактная сборка проверенного A2–A6 без бенчмарков, датасетов, кэшей и экспериментальных запусков. Она служит рабочей Python-реализацией и эталоном для Android-порта. **В APK Python-код не включается.** Ни FastAPI, ни HTTP, ни серверной обработки здесь нет.
+Локальный пайплайн GigaAM v3 E2E RNN-T + Silero VAD + WeSpeaker CAM++: подготовка аудио, распознавание, диаризация и сборка JSON v1. Используется для разработки и сверки алгоритмов. Android-приложение уже выполняет ONNX-инференс в Kotlin; Python в APK не включается.
 
-## Быстрая установка на Windows (Python 3.13)
+## Установка на Windows
 
-Для нового участника команды, находясь в корне проекта:
+Из корня репозитория перейдите в `src/ml-core/`. Нужны Python 3.13 и PowerShell 5.1 или новее:
 
 ```powershell
+cd src/ml-core
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-Скрипт устанавливает фиксированные версии библиотек (`requirements-win-py313.lock`), FFmpeg (если отсутствует), исходные FP32-веса GigaAM (не INT8), Silero и CAM++. Модели загружаются один раз в `models/` и проверяются по контрольным суммам. Повторная установка исправные файлы не скачивает. Дополнительные детали — в [MODEL_SETUP.md](MODEL_SETUP.md). После установки `run.py` использует **локальные веса** и не инициирует загрузку GigaAM.
+Скрипт создаёт `.venv`, устанавливает зависимости из `requirements-win-py313.lock`, проверяет FFmpeg/FFprobe и при необходимости устанавливает их через WinGet. Затем загружает FP32-веса GigaAM, Silero и CAM++, проверяет файлы и загрузку GigaAM в режиме `HF_HUB_OFFLINE=1`. В PyCharm открывайте `src/ml-core/` и выбирайте интерпретатор `.venv\Scripts\python.exe`.
 
-## 1. Создать отдельный проект в PyCharm
+Для ручной установки доступны зависимости из `requirements.txt`; полный список закреплённых зависимостей Windows находится в `requirements-win-py313.lock`. Инструкция по весам и проверке без загрузки — [MODEL_SETUP.md](MODEL_SETUP.md).
 
-1. Нынешний `C:\Users\Misha\Desktop\localProjects\404BNF` **не трогать** — это лаборатория с тестами, экспериментами и результатами.
-2. Распаковать архив рядом с ним, чтобы появилась папка `C:\Users\Misha\Desktop\localProjects\404BNF-ML-Core`.
-3. В PyCharm открыть `File → Open` и выбрать **`404BNF-ML-Core`**. Лучше открыть в новом окне (`New Window`).
-4. Создать новое окружение для нового проекта:
+## Запуск
 
-   ```powershell
-   py -3.13 -m venv .venv
-   .\.venv\Scripts\python.exe -m pip install --upgrade pip
-   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-   ```
-
-   Если PyCharm не выбрал окружение автоматически: Settings → Project → Python Interpreter → Add Interpreter → Existing, выбрать `.venv\Scripts\python.exe`.
-
-5. `ffmpeg -version` и `ffprobe -version` должны работать в терминале PyCharm. FFmpeg уже установлен на машине; второй раз не устанавливать.
-
-## 2. Установка весов ONNX (автоматически)
-
-**Предпочтительно:** запустите `setup.ps1` по инструкции выше. Команды ниже оставлены только для переноса уже имеющихся файлов в целях отладки. В обычном режиме GigaAM теперь хранится в `models/gigaam-v3-e2e-rnnt/`, а не только в общем кэше Hugging Face.
-
-
-Скопировать **только веса**, не скрипты и не датасеты:
+Следующие команды выполняются из `src/ml-core/`. Замените путь после `--audio` на существующий аудиофайл:
 
 ```powershell
-Copy-Item ..\404BNF\models\mobile_diarization\silero_vad_v6.2.1.onnx .\models\mobile_diarization\
-Copy-Item '..\404BNF\models\mobile_diarization\voxceleb_CAM++.onnx' .\models\mobile_diarization\
+.\.venv\Scripts\python.exe run.py --audio "C:\audio\recording.wav" --id recording --output output\recording.json --status-file output\recording-status.json
 ```
 
-Проверьте:
+Модели должны быть установлены заранее. Обычный `run.py` использует локальные веса GigaAM и не выполняет их установку. Для повторной записи в тот же файл явно добавьте `--overwrite`.
 
-```powershell
-Test-Path .\models\mobile_diarization\silero_vad_v6.2.1.onnx
-Test-Path '.\models\mobile_diarization\voxceleb_CAM++.onnx'
-```
+| Параметр | Назначение |
+| --- | --- |
+| `--audio` | Обязательный путь к аудио; декодирование через FFmpeg |
+| `--id` | ID записи; по умолчанию имя входного файла без расширения |
+| `--output` | JSON v1; по умолчанию `output/<id>.json` |
+| `--status-file` | Отдельный JSON со стадией обработки |
+| `--models-dir` | Папка Silero и CAM++; по умолчанию `models/mobile_diarization` |
+| `--cluster-distance` | Порог кластеризации; по умолчанию `0.55` |
+| `--vad-threshold` | Порог VAD; по умолчанию `0.5` |
+| `--window`, `--hop` | Окно и шаг голосовых представлений; по умолчанию `2.0` и `0.8` с |
+| `--threads` | Число потоков движков диаризации; по умолчанию `2` |
+| `--num-speakers` | Известное пользователю число говорящих; иначе определяется автоматически |
+| `--cancel-file` | Создание указанного файла запрашивает отмену между стадиями |
+| `--overwrite` | Разрешение заменить существующий результат |
 
-Обе команды должны вывести `True`. ONNX-веса намеренно не вложены в ZIP. Если исходная папка весов у вас другая, исправьте путь в командах копирования.
+Полный список параметров: `run.py --help`. Ctrl+C запрашивает отмену; текущий синхронный вызов модели должен завершиться до её обработки.
 
-**GigaAM:** `setup.ps1` использует локальную загрузку через `huggingface_hub.hf_hub_download(..., revision=<commit>, local_dir=...)` для загрузки FP32-весов, а `onnx-asr.load_model(..., path=...)` — для их локального запуска и сохраняет веса в папке проекта. Обычный `run.py` не должен начинать сетевую загрузку. Результаты оригинальных экспериментов/эталоны в этом проекте не используются.
-
-## 3. Запуск одной командой
-
-Пример: читаем WAV из **старого проекта**, но записываем итог **в новый**:
-
-```powershell
-.\.venv\Scripts\python.exe run.py --audio ..\404BNF\data\01_dialog_clean.wav --id 01_dialog_clean --output output\01_dialog_clean.json --status-file output\01_clean_status.json
-```
-
-Чтобы повторить запуск в тот же файл, добавить `--overwrite`.
-
-Параметры:
-
-- `--audio`: WAV/MP3/M4A/FLAC и прочие поддерживаемые форматы;
-- `--id`: ID записи; если не указан — имя файла без расширения;
-- `--output`: **JSON v1** (по умолчанию `output/<id>.json`);
-- `--status-file`: отдельный JSON со стадией обработки;
-- `--models-dir`: путь к Silero и CAM++ ONNX;
-- `--cluster-distance`: порог кластеризации, **0.55** по умолчанию;
-- `--num-speakers`: число говорящих только если пользователь заранее его знает;
-- `--cancel-file`: создать этот файл, чтобы запросить отмену **между стадиями**;
-- `--overwrite`: явно разрешить перезапись результата.
-
-Пример с M4A:
-
-```powershell
-.\.venv\Scripts\python.exe run.py --audio "C:\path\to\recording.m4a" --output output\recording.json
-```
-
-**На вашем ноутбуке** предыдущее полное A6 на 01_dialog_clean дало 135 слов, 15 реплик, 2 говорящих и cpWER 10.2%. Чистая сборка создана из того же кода, но её **реальный запуск с весами** необходимо повторить в новом окружении — текущая проверка сборки выполнялась с подставными результатами моделей.
-
-## 4. Структура
+## Структура
 
 ```text
-404BNF-ML-Core/
-├── run.py                           # единственная точка запуска
-├── setup.ps1                        # однокомандная установка Windows
-├── MODEL_SETUP.md                   # где и как получить веса
-├── tools/model_setup.py             # проверка моделей и SHA256
-├── requirements.txt                 # общие Python CPU зависимости
-├── requirements-win-py313.lock      # версия-пиннинг для Windows 3.13
-├── transcript_schema_v1.json        # контракт для Android
+src/ml-core/
+├── run.py                        # CLI
+├── setup.ps1                     # установка на Windows
+├── tools/model_setup.py          # установка и проверка моделей
+├── requirements.txt              # основные CPU-зависимости
+├── requirements-win-py313.lock   # зависимости Windows Python 3.13
+├── transcript_schema_v1.json     # внутренняя схема результата
 ├── processor_core/
-│   ├── __init__.py
-│   ├── contracts.py                  # единые интерфейсы
-│   ├── registry.py                   # подключение новых моделей
-│   ├── model_assets.py               # источники и версии весов
-│   ├── audio.py                      # SHA-256 оригинала
-│   ├── preprocess.py                 # FFmpeg -> mono/16k/float32
-│   ├── pipeline.py                   # слова + говорящие -> JSON
-│   ├── processing.py                 # статусы, отмена, проверки, запись
-│   └── engines/
-│       ├── __init__.py
-│       ├── gigaam.py                  # GigaAM ASR
-│       ├── wespeaker.py               # DiarizationEngine
-│       └── diarization_impl.py        # Silero, FBank, clustering
-├── models/mobile_diarization/        # Silero и CAM++
-├── models/gigaam-v3-e2e-rnnt/        # исходная GigaAM FP32 (устанавливается автоматически)
-└── output/                           # только финальные результаты
+│   ├── contracts.py              # AudioInput и контракты движков
+│   ├── registry.py               # регистрация моделей
+│   ├── model_assets.py           # источники и контрольные суммы
+│   ├── audio.py                  # чтение PCM16 WAV и SHA-256
+│   ├── preprocess.py             # FFmpeg → mono 16 кГц float32
+│   ├── pipeline.py               # сопоставление слов и говорящих
+│   ├── processing.py             # стадии, отмена, валидация, сохранение
+│   └── engines/                  # GigaAM, Silero, WeSpeaker
+├── models/mobile_diarization/    # Silero и CAM++
+├── models/gigaam-v3-e2e-rnnt/     # GigaAM FP32 после установки
+└── output/                       # локальные результаты
 ```
 
-**Отдельно в старом 404BNF оставить:** `tests/`, `score_*.py`, `results/` с метриками, датасеты `data/`, `manifest.jsonl`, `mobile_diarization.py`, ранние `run_a*.py`, скрипты бенчмарков, альтернативные модели и окружения `.venv*`.
+Веса, окружения, пользовательские записи и результаты обработки исключены из Git. Публичный JSON-экспорт Android описан в [архитектуре](../../docs/ARCHITECTURE.md); он отличается от внутреннего JSON v1 пайплайна.
 
-## 5. Важные ограничения
+## Ограничения и проверки
 
-- Это **Python-ядро для разработки и сверки**. Android-приложение будет запускать ONNX локально в Kotlin/Java через Android-совместимые адаптеры. Кода для запуска Python внутри APK нет.
-- Мобильный инференс и воспроизводимость качества на vivo V25e **ещё не подтверждены**.
-- Потоковая обработка непосредственно внутри моделей не реализована: полное аудио собирается в памяти, ограничение по умолчанию 30 минут.
-- ONNX-сессии вызываются последовательно; отмена — только на границах стадий.
-- Пересечения нескольких говорящих WeSpeaker на одной временной шкале не разделяет.
-- Оценки времени слов GigaAM приблизительные (по токенам RNNT, не forced alignment).
-- `schema_version=1`, `result_id`, `audio_sha256`, `segments[].id` сохранены, искусственных confidence нет.
-- Сохранение результата атомарное; без `--overwrite` старый результат не заменяется.
-- Модели имеют отдельные лицензии: проверьте условия их дальнейшего распространения перед публикацией приложения.
+- Python CLI загружает полное декодированное аудио в память. По умолчанию разрешены входные файлы до 1 ГиБ и записи до 30 минут. Наличие `iter_chunks` у препроцессора не делает CLI потоковым. В Android используется отдельная реализация с временным PCM-файлом.
+- ASR и диаризация выполняются последовательно; отмена проверяется между стадиями, а не внутри нативного ONNX-вызова.
+- Одновременная речь нескольких говорящих не разделяется. Времена слов приближённые, на основе RNNT-токенов.
+- Результат сохраняется атомарно; исходный файл не изменяется. JSON содержит `schema_version=1`, `result_id`, `audio_sha256` и ID сегментов; искусственные оценки confidence не добавляются.
+- В репозитории нет воспроизводимого отчёта о текущем качестве Python-инференса с реальными весами. Результаты Android unit-тестов и границы их проверки приведены в [TEST_RESULTS.md](../../docs/TEST_RESULTS.md).
+
+Установка весов и успешная загрузка модели сами по себе не измеряют точность или скорость распознавания.

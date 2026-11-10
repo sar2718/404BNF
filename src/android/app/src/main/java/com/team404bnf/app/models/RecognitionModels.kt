@@ -60,12 +60,12 @@ class RecognitionModels private constructor(context: Context) {
 
     init {
         refresh()
-        // Migrate the earlier single pending preference into the existing durable A17 tasks.
+        // Migrate the earlier single pending preference into durable transcription tasks.
         preferences.getString("pending_recording", null)?.let { id ->
             scope.launch {
                 val valid = runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false)
                 val requested = if (valid) requestTranscription(id) else false
-                // Keep the legacy request if Room could not persist its A17 replacement.
+                // Keep the legacy request if Room could not persist its replacement task.
                 if (!valid || requested || TranscriptionTaskManager.getTask(id) != null) {
                     preferences.edit().remove("pending_recording").apply()
                 }
@@ -208,7 +208,7 @@ class RecognitionModels private constructor(context: Context) {
         }
     }
 
-    /** The A17 worker holds mlMutex from this check until native sessions have closed. */
+    /** The transcription worker holds mlMutex from this check until native sessions have closed. */
     suspend fun verifyForProcessing(): Boolean {
         if (_state.value.phase in setOf(ModelPhase.DOWNLOADING, ModelPhase.REMOVING)) return false
         return operations.withLock { verifyReady() }

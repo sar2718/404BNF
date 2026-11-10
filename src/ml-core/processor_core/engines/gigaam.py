@@ -1,4 +1,4 @@
-"""A5: real GigaAM v3 E2E RNN-T via onnx-asr, conforming to A2 AsrEngine.
+"""GigaAM v3 E2E RNN-T via onnx-asr, conforming to the AsrEngine contract.
 
 Frozen parity with 404BNF Pipeline v2:
 * identical quiet-point chunking (16..22 s; 40 ms frame energy);
@@ -25,9 +25,9 @@ from ..model_assets import GIGAAM_MODELS_DIR, GIGAAM_MANIFEST_NAME, GIGAAM_FILES
 
 def split_audio_by_quiet_points(waveform: np.ndarray, sr: int = 16000,
                                 longest: float = 22.0) -> Iterator[tuple[float, np.ndarray]]:
-    """The exact segmentation logic of the v2 run_asr.py benchmark."""
+    """Split at quiet points between 16 and 22 seconds, targeting 20 seconds."""
     if sr != 16000 or not (math.isfinite(longest) and longest == 22.0):
-        raise ValueError('A5 parity mode requires 16 kHz and longest=22 seconds')
+        raise ValueError('Quiet-point chunking requires 16 kHz and longest=22 seconds')
     cursor = 0
     max_len = round(longest * sr)
     window = max(round(0.04 * sr), 1)
@@ -123,7 +123,7 @@ def extract_words_v2(timestamped_result: Any, offset: float, duration: float) ->
 class GigaAmAsrEngine:
     """CPU GigaAM live adapter; loads model once and reuses it for recordings.
 
-    A2 canonical AudioInput is required. For parity with the prior benchmark,
+    Canonical AudioInput is required. For parity with the prior benchmark,
     ASR chunks are written as temporary PCM16 mono WAV (not directly inferred
     from float arrays). There is no reference-data access or caching here.
     """
@@ -160,7 +160,7 @@ class GigaAmAsrEngine:
 
     def recognize(self, audio: AudioInput) -> AsrResult:
         if not isinstance(audio, AudioInput):
-            raise TypeError('GigaAM expects canonical A2 AudioInput (float32 mono 16kHz)')
+            raise TypeError('GigaAM expects canonical AudioInput (float32 mono 16kHz)')
         try:
             import soundfile as sf
         except ImportError as exc:
@@ -169,7 +169,7 @@ class GigaAmAsrEngine:
         texts: list[str] = []
         words: list[RecognizedWord] = []
         chunk_metadata: list[dict[str, float | int]] = []
-        with tempfile.TemporaryDirectory(prefix='404bnf_a5_asr_') as td:
+        with tempfile.TemporaryDirectory(prefix='404bnf_asr_') as td:
             tmp = Path(td)
             for index, (offset, audio_chunk) in enumerate(
                     split_audio_by_quiet_points(audio.samples, audio.sample_rate)):
@@ -198,5 +198,5 @@ class GigaAmAsrEngine:
                              'rtf': round(elapsed / audio.duration, 4),
                              'load_seconds': round(self.load_seconds, 3),
                              'benchmark_note': ('ASR includes temporary PCM16 chunk writing and ONNX inference; '
-                                                'excludes model load and A3 decoding'),
+                                                'excludes model load and audio preprocessing'),
                          })
